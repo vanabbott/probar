@@ -2,22 +2,67 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
 
-func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		now := time.Now().Format("2006-01-02 15:04:05 MST")
-		fmt.Fprintf(w, `<!DOCTYPE html>
+const page = `<!DOCTYPE html>
 <html>
-<head><title>Current Time</title></head>
-<body style="font-family:monospace;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;font-size:2rem;">
-  <div>%s</div>
+<head>
+  <title>Current Time</title>
+  <meta http-equiv="refresh" content="1">
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%%;
+      background: #0a0a0a;
+      color: #00b7ff;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .time {
+      font-size: clamp(3rem, 14vw, 12rem);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-shadow: 0 0 20px rgba(0, 183, 255, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="time">%s</div>
 </body>
-</html>`, now)
+</html>`
+
+func main() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Only serve the time page on the root path; everything else is 404
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		now := time.Now().Format("15:04:05")
+		fmt.Fprintf(w, page, now)
 	})
 
-	fmt.Println("Listening on :8080")
-	http.ListenAndServe(":8080", nil)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ok")
+	})
+
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ready")
+	})
+
+	log.Println("listening on :8080")
+	if err := http.ListenAndServe(":8080", mux); err != nil {
+		log.Fatalf("server failed: %v", err)
+	}
 }
