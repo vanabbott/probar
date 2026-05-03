@@ -26,6 +26,28 @@ const pageTmpl = `<!DOCTYPE html>
       align-items: center;
       text-align: center;
     }
+    .nav {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      z-index: 10;
+    }
+    .nav a {
+      padding: 0.5rem 1rem;
+      color: #00b7ff;
+      text-decoration: none;
+      border: 2px solid #00b7ff;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      transition: background 0.2s, color 0.2s;
+    }
+    .nav a:hover {
+      background: #00b7ff;
+      color: #0a0a0a;
+    }
     .big {
       font-size: clamp(3rem, 14vw, 12rem);
       font-weight: 700;
@@ -87,6 +109,10 @@ const pageTmpl = `<!DOCTYPE html>
   </style>
 </head>
 <body>
+  <nav class="nav">
+    <a href="/">Home</a>
+    <a href="/time">Time</a>
+  </nav>
   %s
 </body>
 </html>`
