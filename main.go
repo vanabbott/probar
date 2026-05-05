@@ -163,7 +163,6 @@ func main() {
 		renderPage(w, http.StatusOK, "Current Time", `<meta http-equiv="refresh" content="1">`, body)
 	})
 
-  
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
