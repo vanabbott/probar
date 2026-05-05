@@ -168,6 +168,7 @@ func main() {
 		fmt.Fprintln(w, "ok")
 	})
 
+  
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ready")
