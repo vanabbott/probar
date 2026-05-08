@@ -17,9 +17,9 @@ ARG VERSION=dev
 ARG COMMIT=none
 ARG BUILD_TIME=unknown
 
-#RUN --mount=type=cache,target=/go/pkg/mod \
-#    --mount=type=cache,target=/root/.cache/go-build \
-RUN    go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build \
       -o /app main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
