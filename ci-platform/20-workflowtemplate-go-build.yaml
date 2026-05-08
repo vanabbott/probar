@@ -175,9 +175,9 @@ spec:
               --opt build-arg:COMMIT={{workflow.parameters.revision}} \
               --opt build-arg:BUILD_TIME=${BUILD_TIME} \
               --output type=image,name=${IMAGE},push=true \
+              --metadata-file /workspace/.metadata.json
               #--export-cache type=registry,ref=${CACHE_REF},mode=max \
               #--import-cache type=registry,ref=${CACHE_REF} \
-              --metadata-file /workspace/.metadata.json
 
             # Extract the manifest digest of the pushed image. We specifically
             # want "containerimage.digest" (manifest), NOT
