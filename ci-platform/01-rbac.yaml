@@ -1,0 +1,94 @@
+# =====================================================================
+# ServiceAccount used by the polling CronWorkflow.
+# Needs to: read/write a ConfigMap (last-seen SHA), create Workflows.
+# =====================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-poller
+  namespace: ci
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-poller
+  namespace: ci
+rules:
+  # Standard Argo executor permissions (for emissary/argoexec).
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+  # Read/write the last-seen-SHA ConfigMap.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+  # Submit new Workflows.
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows"]
+    verbs: ["create", "get", "list"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtemplates"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-poller
+  namespace: ci
+subjects:
+  - kind: ServiceAccount
+    name: ci-poller
+    namespace: ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-poller
+---
+# =====================================================================
+# ServiceAccount used by build Workflow steps.
+# Needs Argo's standard executor permissions plus the ability to read
+# Harbor and cosign secrets in this namespace.
+# =====================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-builder
+  namespace: ci
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-builder
+  namespace: ci
+rules:
+  # Standard Argo executor permissions (for emissary/argoexec).
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+  # Read CI secrets.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - harbor-dockerconfig
+      - cosign-key
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-builder
+  namespace: ci
+subjects:
+  - kind: ServiceAccount
+    name: ci-builder
+    namespace: ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-builder

@@ -1,0 +1,151 @@
+# =====================================================================
+# Polling CronWorkflow.
+#
+# Every minute, this checks `git ls-remote` against the SHA stored in
+# the `probar-poller-state` ConfigMap. If they differ, it submits a
+# build Workflow from the `go-build-and-push` template and updates
+# the ConfigMap.
+#
+# Honors `[skip ci]` in the latest commit subject — if present, the
+# SHA is recorded but no build is submitted.
+#
+# This is intentionally pull-based: nothing inbound from the public
+# internet, no webhook plumbing.
+# =====================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: poll-probar-repo
+  namespace: ci
+spec:
+  schedules: 
+  - "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 30
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  workflowSpec:
+    serviceAccountName: ci-poller
+    entrypoint: poll
+    ttlStrategy:
+      secondsAfterCompletion: 300
+    arguments:
+      parameters:
+        - name: repo-url
+          value: https://github.com/vanabbott/probar.git
+        - name: branch
+          value: main
+        - name: state-configmap
+          value: probar-poller-state
+        - name: image-name
+          value: harbor.k8s.home/probar/web-app
+    templates:
+      - name: poll
+        steps:
+          - - name: get-remote
+              template: git-ls-remote
+          - - name: trigger
+              template: trigger-if-changed
+              arguments:
+                parameters:
+                  - name: remote-info
+                    value: "{{steps.get-remote.outputs.result}}"
+
+      # ---------------------------------------------------------------
+      # git ls-remote → "<sha> <subject>" (subject is shallow-fetched
+      # so we can honor [skip ci]).
+      # ---------------------------------------------------------------
+      - name: git-ls-remote
+        script:
+          image: alpine/git:latest
+          command: [sh]
+          source: |
+            set -e
+            REPO="{{workflow.parameters.repo-url}}"
+            BRANCH="{{workflow.parameters.branch}}"
+
+            SHA=$(git ls-remote "${REPO}" "refs/heads/${BRANCH}" | awk '{print $1}')
+            if [ -z "${SHA}" ]; then
+              echo "ERROR: branch ${BRANCH} not found" >&2
+              exit 1
+            fi
+
+            # Shallow clone just to read the latest commit subject.
+            cd /tmp
+            git clone --depth 1 --branch "${BRANCH}" "${REPO}" repo >/dev/null 2>&1
+            SUBJECT=$(cd repo && git log -1 --pretty=%s)
+
+            # Output as "<sha>|<subject>" for the next step to parse.
+            # Stdout (last line) becomes outputs.result.
+            echo "${SHA}|${SUBJECT}"
+
+      # ---------------------------------------------------------------
+      # Compare against last-seen SHA, submit Workflow if changed.
+      # ---------------------------------------------------------------
+      - name: trigger-if-changed
+        inputs:
+          parameters:
+            - name: remote-info
+        script:
+          image: bitnamilegacy/kubectl:1.32
+          command: [bash]
+          source: |
+            set -euo pipefail
+
+            INFO="{{inputs.parameters.remote-info}}"
+            REMOTE_SHA="${INFO%%|*}"
+            SUBJECT="${INFO#*|}"
+            CONFIGMAP="{{workflow.parameters.state-configmap}}"
+            NS=ci
+
+            LAST_SHA=$(kubectl -n ${NS} get configmap ${CONFIGMAP} \
+              -o jsonpath='{.data.last-sha}' 2>/dev/null || echo "")
+
+            if [ "${REMOTE_SHA}" = "${LAST_SHA}" ]; then
+              echo "No change. Current: ${REMOTE_SHA}"
+              exit 0
+            fi
+
+            echo "Change detected"
+            echo "  Last:    ${LAST_SHA:-<none>}"
+            echo "  Remote:  ${REMOTE_SHA}"
+            echo "  Subject: ${SUBJECT}"
+
+            # Honor [skip ci]: record the SHA but don't build.
+            case "${SUBJECT}" in
+              *"[skip ci]"*|*"[ci skip]"*)
+                echo "Subject contains [skip ci] — recording SHA without building."
+                ;;
+              *)
+                echo "Submitting build workflow"
+                cat <<EOF | kubectl create -f -
+            apiVersion: argoproj.io/v1alpha1
+            kind: Workflow
+            metadata:
+              generateName: probar-build-
+              namespace: ${NS}
+              labels:
+                app: probar
+                trigger: poll
+                commit-sha: "$(echo ${REMOTE_SHA} | cut -c1-7)"
+            spec:
+              workflowTemplateRef:
+                name: go-build-and-push
+              arguments:
+                parameters:
+                  - name: repo-url
+                    value: {{workflow.parameters.repo-url}}
+                  - name: revision
+                    value: ${REMOTE_SHA}
+                  - name: image-name
+                    value: {{workflow.parameters.image-name}}
+            EOF
+                ;;
+            esac
+
+            # Update state regardless (so [skip ci] commits aren't re-evaluated).
+            kubectl -n ${NS} create configmap ${CONFIGMAP} \
+              --from-literal=last-sha=${REMOTE_SHA} \
+              --dry-run=client -o yaml | kubectl apply -f -
+
+            echo "State updated to ${REMOTE_SHA}"

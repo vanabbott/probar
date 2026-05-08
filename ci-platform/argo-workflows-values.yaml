@@ -1,0 +1,64 @@
+# =====================================================================
+# Helm values for argo-workflows.
+#
+# Install with:
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argo-workflows argo/argo-workflows \
+#     --namespace argo --create-namespace \
+#     --values argo-workflows-values.yaml
+# =====================================================================
+
+# Server (UI/API) — exposed via your existing Traefik Gateway API.
+server:
+  enabled: true
+  replicas: 1
+  authModes:
+    # SSO is the right answer long-term. For getting started, "server"
+    # mode requires no auth headers (works behind your Gateway). Tighten
+    # later by switching to sso.
+    - server
+  # We'll create our own HTTPRoute below; disable the chart's Ingress.
+  ingress:
+    enabled: false
+
+# Workflow controller.
+controller:
+  # Default workflow service account in user namespaces. We override
+  # per-workflow via serviceAccountName, but this is the safe default.
+  workflowDefaults:
+    spec:
+      serviceAccountName: default
+      podGC:
+        strategy: OnWorkflowSuccess
+  # Allow the controller to manage Workflows in the `ci` namespace.
+  # Empty = all namespaces (default). Set to "ci" if you want to scope.
+  workflowNamespaces:
+    - ci
+  metricsConfig:
+    enabled: true
+
+# Persistence: store completed workflow archives in postgres so the UI
+# can show old runs after pod GC. Wire this to your existing CNPG instance
+# (you can drop this whole block to start; it's an enhancement, not a
+# requirement).
+#
+# persistence:
+#   archive: true
+#   postgresql:
+#     host: cnpg-cluster-rw.cnpg.svc
+#     port: 5432
+#     database: argo_workflows
+#     tableName: argo_workflows
+#     userNameSecret:
+#       name: argo-workflows-pg
+#       key: username
+#     passwordSecret:
+#       name: argo-workflows-pg
+#       key: password
+
+# Don't install the standalone executor; controller manages it.
+executor:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi

@@ -1,0 +1,25 @@
+# =====================================================================
+# Internal CA cert for harbor.k8s.home.
+#
+# BuildKit (and cosign, and the scan-gate curl call) all need to trust
+# the CA that signs the harbor.k8s.home cert.
+#
+# To populate this, get your internal CA cert and run:
+#
+#   kubectl create configmap harbor-ca \
+#     --namespace=ci \
+#     --from-file=ca.crt=/path/to/your/internal-ca.crt \
+#     --dry-run=client -o yaml > 03-harbor-ca-configmap.yaml
+#
+# Then `kubectl apply -f 03-harbor-ca-configmap.yaml`.
+# =====================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-ca
+  namespace: ci
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_ME_WITH_YOUR_INTERNAL_CA_CERT
+    -----END CERTIFICATE-----

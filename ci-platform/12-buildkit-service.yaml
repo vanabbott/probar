@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkitd
+  namespace: ci
+  labels:
+    app: buildkitd
+spec:
+  # Headless: workflow steps connect by DNS, no need for a cluster IP.
+  clusterIP: None
+  selector:
+    app: buildkitd
+  ports:
+    - name: buildkit
+      port: 1234
+      targetPort: 1234
+      protocol: TCP

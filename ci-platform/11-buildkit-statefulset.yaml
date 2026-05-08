@@ -1,0 +1,147 @@
+# =====================================================================
+# Rootless BuildKit daemon.
+#
+# StatefulSet rather than Deployment so the persistent build cache (in
+# /home/user/.local/share/buildkit) is bound to a stable PVC. Replicas
+# stay at 1 — BuildKit doesn't share state across instances; if you
+# want parallelism, scale up and let workflow steps round-robin via
+# the headless Service.
+#
+# Security model:
+#   - runs as uid/gid 1000 (no root)
+#   - seccomp/apparmor Unconfined (rootless needs unrestricted syscalls
+#     for user namespace ops; the userns boundary is doing the isolation)
+#   - --oci-worker-no-process-sandbox because we don't have the standard
+#     seccomp profile available
+#
+# Requires:
+#   - kernel >= 5.11 with rootless overlayfs (Ubuntu 22.04+ has this)
+#   - kernel.unprivileged_userns_clone=1 (Ubuntu default)
+# =====================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: buildkitd
+  namespace: ci
+  labels:
+    app: buildkitd
+spec:
+  serviceName: buildkitd
+  replicas: 1
+  selector:
+    matchLabels:
+      app: buildkitd
+  template:
+    metadata:
+      labels:
+        app: buildkitd
+      annotations:
+        # AppArmor: deprecated annotation form, kept for compatibility with
+        # clusters where the new securityContext.appArmorProfile field isn't
+        # honored yet. The new form is also set below.
+        container.apparmor.security.beta.kubernetes.io/buildkitd: unconfined
+    spec:
+      serviceAccountName: ci-builder
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: ca-bundle-builder
+          image: moby/buildkit:v0.16.0-rootless
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              # Concatenate the system bundle and your harbor CA into a
+              # single file in the shared emptyDir. Buildkit reads this
+              # via SSL_CERT_FILE so Go's TLS stack picks it up directly.
+              cat /etc/ssl/certs/ca-certificates.crt /harbor-ca/ca.crt \
+                > /ca-bundle/ca-bundle.crt
+              echo "Wrote $(wc -l < /ca-bundle/ca-bundle.crt) lines to ca-bundle.crt"
+          volumeMounts:
+            - name: harbor-ca
+              mountPath: /harbor-ca
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /ca-bundle
+      containers:
+        - name: buildkitd
+          image: moby/buildkit:v0.16.0-rootless
+          args:
+            - --addr
+            - unix:///run/user/1000/buildkit/buildkitd.sock
+            - --addr
+            - tcp://0.0.0.0:1234
+            - --oci-worker-no-process-sandbox
+            - --config
+            - /etc/buildkit/buildkitd.toml
+          env:
+            - name: SSL_CERT_FILE
+              value: /ca-bundle/ca-bundle.crt
+          readinessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          livenessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+          securityContext:
+            # No privilege escalation, no root.
+            runAsUser: 1000
+            runAsGroup: 1000
+            # Seccomp Unconfined is required for rootless builds.
+            # The user-namespace boundary provides the actual sandbox.
+            seccompProfile:
+              type: Unconfined
+            # Modern AppArmor field (k8s 1.30+).
+            appArmorProfile:
+              type: Unconfined
+          ports:
+            - name: buildkit
+              containerPort: 1234
+          volumeMounts:
+            - name: buildkit-state
+              mountPath: /home/user/.local/share/buildkit
+            - name: config
+              mountPath: /etc/buildkit/buildkitd.toml
+              subPath: buildkitd.toml
+              readOnly: true
+            - name: harbor-ca
+              mountPath: /etc/buildkit/certs
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /ca-bundle
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              # Tune based on your homelab. Go builds are CPU-bound;
+              # giving buildkit more cores genuinely helps.
+              cpu: 4
+              memory: 4Gi
+      volumes:
+        - name: config
+          configMap:
+            name: buildkitd-config
+        - name: harbor-ca
+          configMap:
+            name: harbor-ca
+        - name: ca-bundle
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: buildkit-state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            # Layer cache + go module cache + go build cache. Grows over
+            # time. 20Gi is comfortable for a few apps.
+            storage: 20Gi

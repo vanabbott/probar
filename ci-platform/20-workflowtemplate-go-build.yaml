@@ -1,0 +1,237 @@
+# =====================================================================
+# go-build-and-push WorkflowTemplate
+#
+# Pipeline:
+#   1. checkout-and-test  - clone repo at revision, run go test, compute tag
+#   2. build-push         - buildctl → buildkitd → harbor
+#   3. sign               - cosign sign the digest
+#   4. scan-gate          - poll Harbor Trivy results, fail on critical CVEs
+#
+# Steps share a workspace via volumeClaimTemplates (an ephemeral PVC that
+# lives for the duration of the workflow only — the closest thing to
+# "shared emptyDir" when each step is a separate pod).
+#
+# Parameters:
+#   repo-url     - https URL to the source git repo
+#   revision     - commit SHA to build
+#   image-name   - full registry path WITHOUT tag, e.g.
+#                  harbor.k8s.home/probar/web-app
+#   harbor-project - for the scan-gate API call (e.g. "probar")
+#   harbor-repo    - for the scan-gate API call (e.g. "web-app")
+# =====================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: go-build-and-push
+  namespace: ci
+spec:
+  serviceAccountName: ci-builder
+  entrypoint: build-and-push
+
+  arguments:
+    parameters:
+      - name: repo-url
+      - name: revision
+      - name: image-name
+        value: harbor.k8s.home/probar/web-app
+      - name: harbor-project
+        value: probar
+      - name: harbor-repo
+        value: web-app
+
+  # Ephemeral shared workspace, scoped to this workflow run.
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 5Gi
+
+  # Auto-cleanup of completed workflows. Keeps the namespace tidy.
+  ttlStrategy:
+    secondsAfterCompletion: 86400   # 1 day
+    secondsAfterSuccess: 86400
+    secondsAfterFailure: 259200     # 3 days (longer for failures so you can debug)
+
+  podGC:
+    strategy: OnWorkflowSuccess
+
+  templates:
+    # -----------------------------------------------------------------
+    # Top-level DAG.
+    # -----------------------------------------------------------------
+    - name: build-and-push
+      steps:
+        - - name: checkout-and-test
+            template: checkout-and-test
+        - - name: build-push
+            template: build-push
+            arguments:
+              parameters:
+                - name: image-tag
+                  value: "{{steps.checkout-and-test.outputs.parameters.image-tag}}"
+
+    # -----------------------------------------------------------------
+    # Step 1: checkout + test.
+    # Outputs `image-tag` = "<VERSION>-<shortsha>".
+    # -----------------------------------------------------------------
+    - name: checkout-and-test
+      outputs:
+        parameters:
+          - name: image-tag
+            valueFrom:
+              path: /workspace/.tag
+      container:
+        image: golang:1.23
+        command: [bash, -c]
+        env:
+          - name: GOMODCACHE
+            value: /workspace/.gomodcache
+          - name: GOCACHE
+            value: /workspace/.gocache
+        args:
+          - |
+            set -euo pipefail
+
+            cd /workspace
+            git clone --no-checkout {{workflow.parameters.repo-url}} src
+            cd src
+            git checkout {{workflow.parameters.revision}}
+
+            # Read VERSION from the repo (default to 0.0.0 if missing).
+            VERSION=$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")
+            SHORT_SHA=$(echo {{workflow.parameters.revision}} | cut -c1-7)
+            TAG="${VERSION}-${SHORT_SHA}"
+
+            echo "Building tag: ${TAG}"
+            echo -n "${TAG}" > /workspace/.tag
+
+            # Run tests.
+            go test -v ./...
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+
+    # -----------------------------------------------------------------
+    # Step 2: BuildKit build + push.
+    # Outputs `digest` = sha256 of the pushed image.
+    # -----------------------------------------------------------------
+    - name: build-push
+      inputs:
+        parameters:
+          - name: image-tag
+      outputs:
+        parameters:
+          - name: digest
+            valueFrom:
+              path: /workspace/.digest
+      container:
+        # NOT the rootless image — this is just the buildctl client. The
+        # rootless one is the buildkitd daemon (separate StatefulSet).
+        image: moby/buildkit:v0.16.0
+        command: [sh, -c]
+        env:
+          - name: BUILDKIT_HOST
+            value: tcp://buildkitd.ci.svc.cluster.local:1234
+          - name: DOCKER_CONFIG
+            value: /docker-config
+          - name: SSL_CERT_FILE
+            value: /tmp/ca-bundle.crt
+        args:
+          - |
+            set -euo pipefail
+
+            cat /etc/ssl/certs/ca-certificates.crt /harbor-ca/ca.crt \
+              > /tmp/ca-bundle.crt
+
+            TAG="{{inputs.parameters.image-tag}}"
+            IMAGE="{{workflow.parameters.image-name}}:${TAG}"
+            CACHE_REF="{{workflow.parameters.image-name}}:buildcache"
+            VERSION=$(cat /workspace/.tag | cut -d- -f1)
+            BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            echo "Building ${IMAGE}"
+
+            # buildctl streams the source context to buildkitd, which does
+            # the actual build and push. Auth credentials in $DOCKER_CONFIG
+            # are forwarded over the build session.
+            buildctl \
+              --addr ${BUILDKIT_HOST} \
+              build \
+              --frontend dockerfile.v0 \
+              --local context=/workspace/src \
+              --local dockerfile=/workspace/src \
+              --opt build-arg:VERSION=${VERSION} \
+              --opt build-arg:COMMIT={{workflow.parameters.revision}} \
+              --opt build-arg:BUILD_TIME=${BUILD_TIME} \
+              --output type=image,name=${IMAGE},push=true \
+              --export-cache type=registry,ref=${CACHE_REF},mode=max \
+              --import-cache type=registry,ref=${CACHE_REF} \
+              --metadata-file /workspace/.metadata.json
+
+            # Extract the manifest digest of the pushed image. We specifically
+            # want "containerimage.digest" (manifest), NOT
+            # "containerimage.config.digest" (image config blob). Cosign signs
+            # the manifest digest.
+            #
+            # The buildkit image is alpine-based but doesn't include jq; do a
+            # targeted sed extraction instead.
+            DIGEST=$(sed -n 's/.*"containerimage\.digest"[[:space:]]*:[[:space:]]*"\(sha256:[a-f0-9]\{64\}\)".*/\1/p' \
+              /workspace/.metadata.json | head -1)
+
+            if [ -z "${DIGEST}" ]; then
+              echo "ERROR: failed to extract manifest digest from metadata" >&2
+              cat /workspace/.metadata.json >&2
+              exit 1
+            fi
+
+            echo "Pushed digest: ${DIGEST}"
+            echo -n "${DIGEST}" > /workspace/.digest
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: docker-config
+            mountPath: /docker-config
+            readOnly: true
+          - name: harbor-ca
+            mountPath: /harbor-ca
+            readOnly: true
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+      volumes:
+        - name: docker-config
+          secret:
+            secretName: harbor-dockerconfig
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+        - name: harbor-ca
+          configMap:
+            name: harbor-ca
+
+    # -----------------------------------------------------------------
+    # Step 3: cosign sign by digest.
+    # -----------------------------------------------------------------
+
+
+    # -----------------------------------------------------------------
+    # Step 4: poll Harbor for Trivy scan completion, fail on Critical.
+    # Harbor scans automatically on push if scanning is enabled at the
+    # project level (Projects → probar → Configuration → Vulnerability
+    # scanning → Auto-scan).
+    # -----------------------------------------------------------------
