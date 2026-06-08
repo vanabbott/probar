@@ -151,10 +151,10 @@ func main() {
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			renderPage(w, http.StatusNotFound, "404", "", `<div class="big">404 page not found</div>`)
+			renderPage(w, http.StatusNotFound, "404", "", `<div class="big">404 page not found :(</div>`)
 			return
 		}
-		renderPage(w, http.StatusOK, "Welcome Home", "", homeBody)
+		renderPage(w, http.StatusOK, "Welcome Home!", "", homeBody)
 	})
 
 	mux.HandleFunc("/time", func(w http.ResponseWriter, r *http.Request) {
