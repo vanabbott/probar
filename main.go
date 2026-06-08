@@ -410,16 +410,24 @@ const homeBody = `<header class="hero">
 
 // clientIP returns the best-guess originating client address, honoring the
 // proxy headers set by an ingress/load balancer in front of the service.
+//
+// Note: for the real client IP to survive, the LoadBalancer service fronting
+// the ingress (Traefik, behind MetalLB) must use externalTrafficPolicy: Local.
+// With the default "Cluster" policy, kube-proxy SNATs the source address and
+// every visitor is reported as the same internal cluster IP.
 func clientIP(r *http.Request) string {
+	// X-Real-Ip is set (overwritten) by Traefik to the connecting peer, so it
+	// is preferred over X-Forwarded-For, whose leading entries a client could
+	// spoof by sending the header themselves.
+	if xr := strings.TrimSpace(r.Header.Get("X-Real-Ip")); xr != "" {
+		return xr
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		// X-Forwarded-For: client, proxy1, proxy2 — the first entry is the client.
 		first := strings.TrimSpace(strings.Split(xff, ",")[0])
 		if first != "" {
 			return first
 		}
-	}
-	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
-		return xr
 	}
 	if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		return ip
@@ -450,6 +458,17 @@ func main() {
 		now := time.Now().Format("15:04:05")
 		body := fmt.Sprintf(`<div class="big">%s</div>`, now)
 		renderPage(w, http.StatusOK, "Current Time", `<meta http-equiv="refresh" content="1">`, body)
+	})
+
+	// whoami dumps the resolved client IP and the raw forwarding headers — handy
+	// for diagnosing source-IP issues through the ingress.
+	mux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprintf(w, "client-ip:       %s\n", clientIP(r))
+		fmt.Fprintf(w, "remote-addr:     %s\n", r.RemoteAddr)
+		fmt.Fprintf(w, "x-real-ip:       %s\n", r.Header.Get("X-Real-Ip"))
+		fmt.Fprintf(w, "x-forwarded-for: %s\n", r.Header.Get("X-Forwarded-For"))
+		fmt.Fprintf(w, "host:            %s\n", r.Host)
 	})
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
