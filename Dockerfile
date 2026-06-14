@@ -9,7 +9,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-COPY main.go .
+COPY main.go workout.html ./
 
 # Optional: build args for version metadata. Remove these three ARG lines
 # and the -ldflags flag below if your code doesn't have version vars.

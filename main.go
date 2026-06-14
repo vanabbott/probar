@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"html"
 	"log"
@@ -9,6 +10,15 @@ import (
 	"strings"
 	"time"
 )
+
+// workoutHTML is a self-contained React SPA (the gym workout tracker) served at
+// /workout. It loads React + Babel from a CDN and transpiles its JSX in the
+// browser, so there's no frontend build step — it stays a single Go binary.
+// Kept in its own file because the JSX uses backtick template literals, which
+// can't live in a Go raw-string literal.
+//
+//go:embed workout.html
+var workoutHTML string
 
 const pageTmpl = `<!DOCTYPE html>
 <html lang="en">
@@ -298,6 +308,7 @@ const pageTmpl = `<!DOCTYPE html>
     <div class="nav-links">
       <a href="/">Home</a>
       <a href="/#tools">Tools</a>
+      <a href="/workout">Workout</a>
       <a href="/time">Time</a>
     </div>
   </nav>
@@ -452,6 +463,14 @@ func main() {
 		ip := html.EscapeString(clientIP(r))
 		body := fmt.Sprintf(homeBody, ip, ip)
 		renderPage(w, http.StatusOK, "probar · home", "", body)
+	})
+
+	// /workout serves a self-contained React SPA (gym workout tracker). It
+	// renders full-bleed with its own header, so it intentionally skips the
+	// shared pageTmpl chrome.
+	mux.HandleFunc("/workout", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, workoutHTML)
 	})
 
 	mux.HandleFunc("/time", func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workout Tracker · probar</title>
+  <style>
+    html, body { margin: 0; background: #111827; }
+  </style>
+
+  <!-- React + ReactDOM (UMD globals) and Babel standalone for in-browser JSX.
+       No build step — matches probar's single-binary, zero-tooling setup.
+       React 18 is pinned because React 19 dropped the UMD/global builds. -->
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState } = React;
+
+const WARMUP = [
+  { name: "Treadmill or Bike", detail: "5 min easy pace — get blood moving, light sweat" },
+  { name: "Hip Circle (each side)", detail: "10 reps/side — hands on hips, slow controlled circles" },
+  { name: "Cat-Cow", detail: "10 reps — on all fours, arch and round your back slowly" },
+  { name: "Glute Bridge", detail: "15 reps — lie on back, feet flat, drive hips up and squeeze" },
+  { name: "Thoracic Rotation", detail: "8 reps/side — seated or kneeling, rotate upper back only" },
+  { name: "Band Pull-Apart (or arms only)", detail: "15 reps — arms at shoulder height, pull apart and squeeze shoulder blades" },
+];
+
+const COOLDOWN = [
+  { name: "Hip Flexor Stretch", detail: "30 sec/side — kneeling lunge position, sink hips forward" },
+  { name: "Hamstring Stretch", detail: "30 sec/side — seated or standing, keep back flat" },
+  { name: "Child's Pose", detail: "45 sec — arms extended, let lower back decompress" },
+  { name: "Thoracic Extension over Bench", detail: "30 sec — sit on bench edge, clasp hands behind head, extend upper back over edge gently" },
+  { name: "Deep Breathing", detail: "1 min — diaphragmatic breaths, in through nose, out through mouth" },
+];
+
+const DAYS = [
+  {
+    id: "A",
+    label: "Day A",
+    focus: "Push + Core",
+    color: "#3B82F6",
+    exercises: [
+      { name: "Goblet Squat", sets: 3, reps: "10", notes: "Hold dumbbell at chest, sit back and down, chest tall. Back-safe squat pattern." },
+      { name: "Dumbbell Chest Press (flat bench)", sets: 3, reps: "10–12", notes: "Start light, controlled. Lower slowly (2 sec down), press up." },
+      { name: "Cable Lateral Raise", sets: 3, reps: "12–15", notes: "Light weight, shoulder health. Slight bend in elbow, raise to shoulder height." },
+      { name: "Overhead Tricep Extension (cable)", sets: 3, reps: "12", notes: "Rope attachment, elbows stay in place, extend fully." },
+      { name: "Face Pull (cable, rope)", sets: 3, reps: "15", notes: "🔑 Do every session. Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+      { name: "Bird-Dog", sets: 3, reps: "8/side", notes: "🔑 Do every session. On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+      { name: "Dead Bug", sets: 3, reps: "8/side", notes: "Lie on back, arms up, knees at 90°. Lower one arm + opposite leg simultaneously, lower back stays FLAT on floor." },
+      { name: "Plank", sets: 3, reps: "20–30 sec", notes: "Forearms or hands. Squeeze glutes, don't let hips sag. Build duration over time." },
+    ],
+  },
+  {
+    id: "B",
+    label: "Day B",
+    focus: "Pull + Hinge",
+    color: "#10B981",
+    exercises: [
+      { name: "Romanian Deadlift (dumbbells)", sets: 3, reps: "10", notes: "Hip hinge — NOT a regular deadlift. Soft bend in knees, push hips back, weights track down legs. Feel hamstrings stretch. Back stays flat." },
+      { name: "Seated Cable Row", sets: 3, reps: "10–12", notes: "Neutral grip, pull to lower chest. Squeeze shoulder blades together at end. Don't round forward on the return." },
+      { name: "Lat Pulldown", sets: 3, reps: "10–12", notes: "Wide overhand grip. Pull bar to upper chest, lean back slightly. Controlled on the way up." },
+      { name: "Dumbbell Curl", sets: 3, reps: "12", notes: "Elbows stay at sides. Full range of motion. No swinging." },
+      { name: "Face Pull (cable, rope)", sets: 3, reps: "15", notes: "🔑 Do every session. Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+      { name: "Bird-Dog", sets: 3, reps: "8/side", notes: "🔑 Do every session. On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+      { name: "McGill Curl-Up", sets: 3, reps: "8", notes: "Back-safe ab work. One knee bent, hands under lower back to preserve its curve. Lift only head and shoulders slightly. Hold 10 sec each rep." },
+    ],
+  },
+  {
+    id: "C",
+    label: "Day C",
+    focus: "Full Body + Core",
+    color: "#8B5CF6",
+    exercises: [
+      { name: "Leg Press (machine)", sets: 3, reps: "12", notes: "Feet shoulder-width, mid-height on platform. Don't lock knees at top. No spinal compression — great alternative to squats." },
+      { name: "Incline Dumbbell Press", sets: 3, reps: "10–12", notes: "Bench at 30–45°. Control the descent, press up and slightly in." },
+      { name: "Single-Arm Dumbbell Row", sets: 3, reps: "10/side", notes: "Brace on bench with hand and knee. Pull elbow straight back and up. Back stays flat and parallel to floor." },
+      { name: "Cable Pull-Through", sets: 3, reps: "12", notes: "Low cable, rope attachment, face away. Hinge at hips and drive them forward to stand. Teaches safe hip hinge pattern." },
+      { name: "Face Pull (cable, rope)", sets: 3, reps: "15", notes: "🔑 Do every session. Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+      { name: "Bird-Dog", sets: 3, reps: "8/side", notes: "🔑 Do every session. On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+      { name: "Pallof Press (cable)", sets: 3, reps: "10/side", notes: "Stand sideways to cable machine. Press cable straight out from chest, hold 2 sec, return. Anti-rotation core — excellent for disk recovery." },
+    ],
+  },
+];
+
+const CheckBox = ({ checked, onChange }) => (
+  <button
+    onClick={onChange}
+    style={{
+      width: 26,
+      height: 26,
+      borderRadius: 6,
+      border: checked ? "none" : "2px solid #4B5563",
+      background: checked ? "#10B981" : "transparent",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+      flexShrink: 0,
+      transition: "all 0.15s",
+    }}
+  >
+    {checked && (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )}
+  </button>
+);
+
+const ExerciseCard = ({ exercise, index, dayColor }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [setsDone, setSetsDone] = useState([]);
+  const isKey = exercise.notes.startsWith("🔑");
+  const allDone = setsDone.length === exercise.sets;
+
+  const toggleSet = (i) => {
+    setSetsDone((prev) =>
+      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
+    );
+  };
+
+  return (
+    <div
+      style={{
+        background: allDone ? "#064E3B" : "#1F2937",
+        border: `1px solid ${allDone ? "#10B981" : isKey ? "#F59E0B44" : "#374151"}`,
+        borderRadius: 12,
+        marginBottom: 10,
+        overflow: "hidden",
+        transition: "all 0.2s",
+      }}
+    >
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          width: "100%",
+          padding: "14px 16px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          textAlign: "left",
+        }}
+      >
+        <span
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            background: allDone ? "#10B981" : dayColor + "33",
+            border: `1px solid ${allDone ? "#10B981" : dayColor}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 12,
+            fontWeight: 700,
+            color: allDone ? "#fff" : dayColor,
+            flexShrink: 0,
+          }}
+        >
+          {allDone ? "✓" : index + 1}
+        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#F9FAFB", fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>
+            {exercise.name}
+          </div>
+          <div style={{ color: "#9CA3AF", fontSize: 13, marginTop: 2 }}>
+            {exercise.sets} sets × {exercise.reps}
+            {isKey && <span style={{ color: "#F59E0B", marginLeft: 6 }}>★ Key</span>}
+          </div>
+        </div>
+        <span style={{ color: "#6B7280", fontSize: 18 }}>{expanded ? "▲" : "▼"}</span>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: "0 16px 16px", borderTop: "1px solid #374151" }}>
+          <p style={{ color: "#D1FAE5", fontSize: 13, lineHeight: 1.6, margin: "12px 0 14px", background: "#065F4622", borderRadius: 8, padding: "10px 12px" }}>
+            {exercise.notes.replace("🔑 Do every session. ", "")}
+          </p>
+          <div style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 8, fontWeight: 600 }}>
+            Track your sets:
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {Array.from({ length: exercise.sets }).map((_, i) => (
+              <label
+                key={i}
+                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
+                <CheckBox
+                  checked={setsDone.includes(i)}
+                  onChange={() => toggleSet(i)}
+                />
+                <span style={{ color: setsDone.includes(i) ? "#10B981" : "#9CA3AF", fontSize: 14 }}>
+                  Set {i + 1}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PhaseSection = ({ title, icon, items, color, type }) => {
+  const [checked, setChecked] = useState([]);
+  const toggle = (i) =>
+    setChecked((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 18 }}>{icon}</span>
+        <h3 style={{ color, fontSize: 16, fontWeight: 700, margin: 0 }}>{title}</h3>
+        <span style={{ color: "#6B7280", fontSize: 13 }}>({items.length} steps)</span>
+      </div>
+      {items.map((item, i) => (
+        <div
+          key={i}
+          style={{
+            background: checked.includes(i) ? "#064E3B" : "#1F2937",
+            border: `1px solid ${checked.includes(i) ? "#10B981" : "#374151"}`,
+            borderRadius: 10,
+            padding: "12px 14px",
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <CheckBox checked={checked.includes(i)} onChange={() => toggle(i)} />
+          <div>
+            <div style={{ color: "#F9FAFB", fontWeight: 600, fontSize: 14 }}>{item.name}</div>
+            <div style={{ color: "#9CA3AF", fontSize: 13, marginTop: 3, lineHeight: 1.5 }}>{item.detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+function GymApp() {
+  const [activeTab, setActiveTab] = useState("A");
+  const [phase, setPhase] = useState("warmup"); // warmup | workout | cooldown
+
+  const day = DAYS.find((d) => d.id === activeTab);
+
+  const phaseOrder = ["warmup", "workout", "cooldown"];
+  const phaseIndex = phaseOrder.indexOf(phase);
+
+  return (
+    <div
+      style={{
+        background: "#111827",
+        minHeight: "100vh",
+        fontFamily: "'Inter', system-ui, sans-serif",
+        maxWidth: 520,
+        margin: "0 auto",
+        paddingBottom: 40,
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          background: "#1F2937",
+          padding: "20px 20px 0",
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          borderBottom: "1px solid #374151",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <span style={{ fontSize: 22 }}>🏋️</span>
+          <div>
+            <h1 style={{ color: "#F9FAFB", fontSize: 20, fontWeight: 800, margin: 0 }}>
+              Workout Tracker
+            </h1>
+            <p style={{ color: "#6B7280", fontSize: 12, margin: 0 }}>Back-safe · Beginner strength</p>
+          </div>
+        </div>
+
+        {/* Day tabs */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {DAYS.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => { setActiveTab(d.id); setPhase("warmup"); }}
+              style={{
+                flex: 1,
+                padding: "10px 6px",
+                borderRadius: 8,
+                border: "none",
+                background: activeTab === d.id ? d.color : "#374151",
+                color: activeTab === d.id ? "#fff" : "#9CA3AF",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              <div>{d.label}</div>
+              <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>{d.focus}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Phase tabs */}
+        <div style={{ display: "flex", borderTop: "1px solid #374151" }}>
+          {[
+            { id: "warmup", label: "🔥 Warm-Up" },
+            { id: "workout", label: "💪 Workout" },
+            { id: "cooldown", label: "🧊 Cool-Down" },
+          ].map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPhase(p.id)}
+              style={{
+                flex: 1,
+                padding: "10px 4px",
+                border: "none",
+                background: "transparent",
+                borderBottom: phase === p.id ? `2px solid ${day.color}` : "2px solid transparent",
+                color: phase === p.id ? "#F9FAFB" : "#6B7280",
+                fontWeight: phase === p.id ? 700 : 400,
+                fontSize: 12,
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: "20px 16px" }}>
+        {phase === "warmup" && (
+          <>
+            <div
+              style={{
+                background: "#1F2937",
+                border: "1px solid #F59E0B44",
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 20,
+              }}
+            >
+              <p style={{ color: "#FCD34D", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                <strong>Every session starts here.</strong> Don't skip — this is especially important with your back history. Takes ~10 min.
+              </p>
+            </div>
+            <PhaseSection
+              title="Warm-Up"
+              icon="🔥"
+              items={WARMUP}
+              color="#F59E0B"
+              type="warmup"
+            />
+            <button
+              onClick={() => setPhase("workout")}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: day.color,
+                border: "none",
+                borderRadius: 10,
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: "pointer",
+              }}
+            >
+              Start Workout →
+            </button>
+          </>
+        )}
+
+        {phase === "workout" && (
+          <>
+            <div
+              style={{
+                background: "#1F2937",
+                border: `1px solid ${day.color}44`,
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 20,
+              }}
+            >
+              <p style={{ color: "#D1FAE5", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                <strong style={{ color: "#F9FAFB" }}>{day.label} — {day.focus}</strong>
+                <br />
+                Rest 60–90 sec between sets. Tap an exercise to expand it and track sets. ★ Key exercises are critical for your back.
+              </p>
+            </div>
+            {day.exercises.map((ex, i) => (
+              <ExerciseCard key={i} exercise={ex} index={i} dayColor={day.color} />
+            ))}
+            <button
+              onClick={() => setPhase("cooldown")}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: "#8B5CF6",
+                border: "none",
+                borderRadius: 10,
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: "pointer",
+                marginTop: 8,
+              }}
+            >
+              Done — Cool Down →
+            </button>
+          </>
+        )}
+
+        {phase === "cooldown" && (
+          <>
+            <div
+              style={{
+                background: "#1F2937",
+                border: "1px solid #8B5CF644",
+                borderRadius: 10,
+                padding: "12px 14px",
+                marginBottom: 20,
+              }}
+            >
+              <p style={{ color: "#DDD6FE", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                <strong>Don't skip this either.</strong> 5–8 minutes of stretching after every session is one of the best things you can do for your disk long-term.
+              </p>
+            </div>
+            <PhaseSection
+              title="Cool-Down"
+              icon="🧊"
+              items={COOLDOWN}
+              color="#8B5CF6"
+              type="cooldown"
+            />
+            <div
+              style={{
+                background: "#064E3B",
+                border: "1px solid #10B981",
+                borderRadius: 10,
+                padding: "16px",
+                textAlign: "center",
+                marginTop: 8,
+              }}
+            >
+              <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
+              <div style={{ color: "#F9FAFB", fontWeight: 700, fontSize: 16 }}>Session Complete!</div>
+              <div style={{ color: "#6EE7B7", fontSize: 13, marginTop: 4 }}>Great work. Rest up and come back strong.</div>
+            </div>
+          </>
+        )}
+
+        {/* Back safety reminder */}
+        <div
+          style={{
+            background: "#1F2937",
+            border: "1px solid #EF444433",
+            borderRadius: 10,
+            padding: "12px 14px",
+            marginTop: 24,
+          }}
+        >
+          <div style={{ color: "#FCA5A5", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Back Safety Reminders</div>
+          <ul style={{ color: "#9CA3AF", fontSize: 12, margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
+            <li>Sharp or radiating pain → stop immediately</li>
+            <li>No barbell back squats or conventional deadlifts yet</li>
+            <li>Lower back always stays flat (not arched) during core work</li>
+            <li>Start lighter than you think you need to</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<GymApp />);
+  </script>
+</body>
+</html>
