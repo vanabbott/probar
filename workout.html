@@ -83,12 +83,17 @@ const todayStr = () => {
 
 const blankProgress = () => {
   const p = {};
-  DAYS.forEach((d) => { p[d.id] = { sets: {}, warmup: [], cooldown: [] }; });
+  DAYS.forEach((d) => { p[d.id] = { counts: {}, warmup: [], cooldown: [] }; });
   return p;
 };
 
+// REST_DEFAULT is the starting rest length; the user can nudge it in 30s steps.
+const REST_DEFAULT = 60;
+const REST_STEP = 30;
+const REST_MIN = 30;
+
 function initState() {
-  const base = { day: "A", phase: "warmup", date: todayStr(), progress: blankProgress(), weights: {} };
+  const base = { day: "A", phase: "warmup", date: todayStr(), progress: blankProgress(), weights: {}, restDur: REST_DEFAULT };
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) { saved = null; }
   if (!saved) return base;
@@ -96,6 +101,7 @@ function initState() {
   const merged = { ...base, ...saved };
   // Weights persist indefinitely (last weight used per exercise name).
   merged.weights = saved.weights || {};
+  merged.restDur = saved.restDur || REST_DEFAULT;
   // Checkmarks reset on a new calendar day; weights are kept.
   if (saved.date !== todayStr()) {
     merged.progress = blankProgress();
@@ -104,7 +110,18 @@ function initState() {
     const prog = blankProgress();
     DAYS.forEach((d) => {
       const sp = (saved.progress && saved.progress[d.id]) || {};
-      prog[d.id] = { sets: sp.sets || {}, warmup: sp.warmup || [], cooldown: sp.cooldown || [] };
+      // Migrate older progress shapes into the per-exercise set count.
+      let counts = {};
+      if (sp.counts && typeof sp.counts === "object") {
+        counts = sp.counts; // current shape
+      } else if (Array.isArray(sp.done)) {
+        // 0.1.10 stored whole-exercise done flags — treat each as all sets done.
+        sp.done.forEach((i) => { if (d.exercises[i]) counts[i] = d.exercises[i].sets; });
+      } else if (sp.sets) {
+        // pre-0.1.10 stored per-set arrays — the count is how many were ticked.
+        Object.keys(sp.sets).forEach((i) => { counts[i] = (sp.sets[i] || []).length; });
+      }
+      prog[d.id] = { counts: counts, warmup: sp.warmup || [], cooldown: sp.cooldown || [] };
     });
     merged.progress = prog;
   }
@@ -141,6 +158,8 @@ function beep() {
 
 const SMALL_BTN = { background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const PILL_BTN = { background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 999, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+const STEP_BTN = { width: 30, height: 30, lineHeight: "1", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 8, fontSize: 20, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: 0, flexShrink: 0 };
+const START_BTN = { background: "transparent", border: "1px solid var(--border)", borderRadius: 999, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" };
 const CTA = { width: "100%", padding: "15px", background: "linear-gradient(135deg, var(--accent), var(--accent-2))", border: "none", borderRadius: 12, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", marginTop: 10, boxShadow: "0 8px 30px rgba(79,140,255,0.35)", fontFamily: "inherit" };
 
 // ---- presentational --------------------------------------------------------
@@ -167,35 +186,61 @@ const Bar = ({ pct, color }) => (
   </div>
 );
 
-const ExerciseCard = ({ exercise, index, day, setsDone, weight, onToggleSet, onSetWeight }) => {
-  const [expanded, setExpanded] = useState(false);
+// RestTimer is pinned to the top of every phase. Idle, it shows the configured
+// length with −/+ 30s steppers and a Start button; running, it counts down with
+// a progress bar plus +30s / Skip. One tap to trigger it whenever you want.
+const RestTimer = ({ active, left, dur, color, onStart, onStop, onAdjust, onAdd }) => {
+  const pct = active && dur > 0 ? Math.max(0, (left / dur) * 100) : 0;
+  return (
+    <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 16, flexShrink: 0 }}>⏱</span>
+      {!active ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => onAdjust(-REST_STEP)} disabled={dur <= REST_MIN} style={{ ...STEP_BTN, opacity: dur <= REST_MIN ? 0.4 : 1 }} aria-label="less rest">−</button>
+            <span className="mono" style={{ minWidth: 48, textAlign: "center", fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{fmtTime(dur)}</span>
+            <button onClick={() => onAdjust(REST_STEP)} style={STEP_BTN} aria-label="more rest">+</button>
+          </div>
+          <span style={{ color: "var(--muted)", fontSize: 11, flex: 1, minWidth: 0 }}>rest length</span>
+          <button onClick={onStart} style={{ ...START_BTN, borderColor: color, color: color }}>Start Rest ▸</button>
+        </>
+      ) : (
+        <>
+          <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: color, minWidth: 58, flexShrink: 0 }}>{fmtTime(left)}</span>
+          <div style={{ flex: 1, height: 6, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden", minWidth: 30 }}>
+            <div style={{ height: "100%", width: pct + "%", background: color, borderRadius: 999, transition: "width 1s linear" }} />
+          </div>
+          <button onClick={() => onAdd(REST_STEP)} style={PILL_BTN}>+30s</button>
+          <button onClick={onStop} style={{ ...PILL_BTN, color: "var(--text)" }}>Skip</button>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ExerciseCard mirrors the warm-up/cool-down item: tapping the row marks the
+// whole exercise done (fills all sets) or clears it. A lightweight set tracker —
+// one dot per set — lets you log sets one tap at a time without a drop-down, and
+// the weight field is always visible. Form-cue notes sit behind a "How?" toggle.
+const ExerciseCard = ({ exercise, day, count, weight, onToggle, onIncrement, onSetWeight }) => {
+  const [showNotes, setShowNotes] = useState(false);
   const isKey = exercise.notes.startsWith("🔑");
-  const allDone = setsDone.length === exercise.sets;
   const dayColor = day.color;
+  const done = count >= exercise.sets;
 
   return (
     <div
       style={{
-        background: allDone ? "var(--success-soft)" : "var(--surface)",
-        border: "1px solid " + (allDone ? "var(--success-border)" : isKey ? "var(--warn-border)" : "var(--border)"),
+        background: done ? "var(--success-soft)" : "var(--surface)",
+        border: "1px solid " + (done ? "var(--success-border)" : isKey ? "var(--warn-border)" : "var(--border)"),
         borderRadius: "var(--radius)", marginBottom: 10, overflow: "hidden", transition: "all 0.2s", boxShadow: "var(--shadow-sm)",
       }}
     >
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        style={{ width: "100%", padding: "14px 16px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, textAlign: "left", fontFamily: "inherit" }}
+      <div
+        {...press(onToggle)}
+        style={{ padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}
       >
-        <span
-          style={{
-            width: 30, height: 30, borderRadius: "50%",
-            background: allDone ? "var(--success)" : dayColor + "26",
-            border: "1px solid " + (allDone ? "var(--success)" : dayColor),
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, fontWeight: 700, color: allDone ? "#0b0d12" : dayColor, flexShrink: 0,
-          }}
-        >
-          {allDone ? "✓" : index + 1}
-        </span>
+        <CheckBox checked={done} color={dayColor} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ color: "var(--text)", fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{exercise.name}</div>
           <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 2 }}>
@@ -204,41 +249,50 @@ const ExerciseCard = ({ exercise, index, day, setsDone, weight, onToggleSet, onS
             {isKey && <span style={{ color: "var(--warn)", marginLeft: 6 }}>★ Key</span>}
           </div>
         </div>
-        <span style={{ color: allDone ? "var(--success)" : "var(--muted)", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
-          {setsDone.length}/{exercise.sets}
-        </span>
-        <span style={{ color: "var(--muted)", fontSize: 15, marginLeft: 2, flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
-      </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowNotes((v) => !v); }}
+          aria-label="how to do it"
+          style={{ ...SMALL_BTN, padding: "6px 9px", borderRadius: 8, flexShrink: 0 }}
+        >
+          {showNotes ? "Hide" : "How?"}
+        </button>
+      </div>
 
-      {expanded && (
-        <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)" }}>
-          <p style={{ color: "var(--text)", opacity: 0.82, fontSize: 13, lineHeight: 1.6, margin: "12px 0 14px", background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px" }}>
+      {/* Set tracker + weight. Taps here must not toggle the whole exercise. */}
+      <div style={{ padding: "0 16px 14px" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--muted)", fontSize: 13, fontWeight: 600 }}>Sets</span>
+          <div
+            {...press(onIncrement)}
+            aria-label={"log a set, " + count + " of " + exercise.sets + " done"}
+            style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "5px 9px", borderRadius: 8, background: "var(--bg-soft)", border: "1px solid var(--border)" }}
+          >
+            {Array.from({ length: exercise.sets }).map((_, i) => (
+              <span key={i} style={{ width: 20, height: 10, borderRadius: 999, background: i < count ? dayColor : "var(--surface-2)", transition: "background 0.15s" }} />
+            ))}
+            <span style={{ color: "var(--text)", fontSize: 13, fontWeight: 700, marginLeft: 4 }}>{count}/{exercise.sets}</span>
+          </div>
+          <span style={{ color: "var(--muted)", fontSize: 11 }}>tap to log a set</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--muted)", fontSize: 13, fontWeight: 600 }}>Weight</span>
+          <input
+            value={weight}
+            onChange={(e) => onSetWeight(e.target.value)}
+            placeholder="e.g. 45 lb"
+            inputMode="text"
+            style={{ width: 120, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", padding: "8px 10px", fontSize: 14, fontFamily: "inherit" }}
+          />
+          <span style={{ color: "var(--muted)", fontSize: 11 }}>remembered for next time</span>
+        </div>
+      </div>
+
+      {showNotes && (
+        <div style={{ padding: "0 16px 16px" }}>
+          <p style={{ color: "var(--text)", opacity: 0.82, fontSize: 13, lineHeight: 1.6, margin: 0, background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px" }}>
             {exercise.notes.replace("🔑 Do every session. ", "")}
           </p>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <span style={{ color: "var(--muted)", fontSize: 13, fontWeight: 600 }}>Weight</span>
-            <input
-              value={weight}
-              onChange={(e) => onSetWeight(e.target.value)}
-              placeholder="e.g. 45 lb"
-              style={{ width: 130, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", padding: "8px 10px", fontSize: 14, fontFamily: "inherit" }}
-            />
-            <span style={{ color: "var(--muted)", fontSize: 11 }}>remembered for next time</span>
-          </div>
-
-          <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 8, fontWeight: 600 }}>Track your sets</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {Array.from({ length: exercise.sets }).map((_, i) => {
-              const on = setsDone.includes(i);
-              return (
-                <div key={i} {...press(() => onToggleSet(i))} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "4px 6px", borderRadius: 8 }}>
-                  <CheckBox checked={on} />
-                  <span style={{ color: on ? "var(--success)" : "var(--muted)", fontSize: 14 }}>Set {i + 1}</span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
     </div>
@@ -304,27 +358,17 @@ function GymApp() {
 
   const day = DAYS.find((d) => d.id === state.day);
   const phase = state.phase;
-  const dp = state.progress[state.day] || { sets: {}, warmup: [], cooldown: [] };
+  const dp = state.progress[state.day] || { counts: {}, warmup: [], cooldown: [] };
 
-  const startRest = (d) => setRest({ active: true, left: d == null ? 90 : d });
+  const startRest = () => setRest({ active: true, left: state.restDur });
   const stopRest = () => setRest((r) => ({ ...r, active: false }));
+  const addRest = (sec) => setRest((r) => ({ ...r, left: r.left + sec }));
+  const adjustRestDur = (delta) =>
+    setState((s) => ({ ...s, restDur: Math.max(REST_MIN, s.restDur + delta) }));
 
   const setDay = (id) => setState((s) => ({ ...s, day: id, phase: "warmup" }));
   const setPhase = (p) => setState((s) => ({ ...s, phase: p }));
   const setWeight = (name, val) => setState((s) => ({ ...s, weights: { ...s.weights, [name]: val } }));
-
-  const toggleSet = (exIndex, setIndex) => {
-    const cur = dp.sets[exIndex] || [];
-    const willCheck = !cur.includes(setIndex);
-    setState((s) => {
-      const id = s.day;
-      const p = s.progress[id];
-      const c = p.sets[exIndex] || [];
-      const next = c.includes(setIndex) ? c.filter((x) => x !== setIndex) : [...c, setIndex].sort((a, b) => a - b);
-      return { ...s, progress: { ...s.progress, [id]: { ...p, sets: { ...p.sets, [exIndex]: next } } } };
-    });
-    if (willCheck) startRest(90); // auto rest between sets
-  };
 
   const togglePhase = (type, i) => setState((s) => {
     const id = s.day;
@@ -334,20 +378,46 @@ function GymApp() {
     return { ...s, progress: { ...s.progress, [id]: { ...p, [type]: next } } };
   });
 
+  const setCount = (exIndex, n) => setState((s) => {
+    const id = s.day;
+    const p = s.progress[id];
+    return { ...s, progress: { ...s.progress, [id]: { ...p, counts: { ...p.counts, [exIndex]: n } } } };
+  });
+
+  // Tap a set dot: log one more set, wrapping back to 0 once all are done.
+  // Logging a set (not wrapping) kicks off the rest timer automatically.
+  const incrementSet = (i) => {
+    const sets = day.exercises[i].sets;
+    const cur = dp.counts[i] || 0;
+    const next = cur >= sets ? 0 : cur + 1;
+    setCount(i, next);
+    if (next > cur) startRest();
+  };
+
+  // Tap the row: mark the whole exercise done (fill all sets) or clear it.
+  const toggleExercise = (i) => {
+    const sets = day.exercises[i].sets;
+    const cur = dp.counts[i] || 0;
+    setCount(i, cur >= sets ? 0 : sets);
+  };
+
   const resetDay = () => {
     if (window.confirm("Reset progress for " + day.label + " today? Logged weights are kept.")) {
-      setState((s) => ({ ...s, progress: { ...s.progress, [s.day]: { sets: {}, warmup: [], cooldown: [] } } }));
+      setState((s) => ({ ...s, progress: { ...s.progress, [s.day]: { counts: {}, warmup: [], cooldown: [] } } }));
       stopRest();
     }
   };
 
-  // progress
+  // progress — exercises are "done" when every set is logged; the bar tracks sets
+  const cnt = (i) => Math.min(dp.counts[i] || 0, day.exercises[i].sets);
+  const totalEx = day.exercises.length;
+  const doneEx = day.exercises.reduce((a, e, i) => a + (cnt(i) >= e.sets ? 1 : 0), 0);
   const totalSets = day.exercises.reduce((a, e) => a + e.sets, 0);
-  const doneSets = day.exercises.reduce((a, e, i) => a + (dp.sets[i] || []).length, 0);
+  const doneSets = day.exercises.reduce((a, e, i) => a + cnt(i), 0);
   const workoutPct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
   const warmupPct = Math.round((dp.warmup.length / WARMUP.length) * 100);
   const cooldownPct = Math.round((dp.cooldown.length / COOLDOWN.length) * 100);
-  const complete = { warmup: warmupPct === 100, workout: workoutPct === 100 && totalSets > 0, cooldown: cooldownPct === 100 };
+  const complete = { warmup: warmupPct === 100, workout: workoutPct === 100 && totalEx > 0, cooldown: cooldownPct === 100 };
   const phasePct = phase === "warmup" ? warmupPct : phase === "workout" ? workoutPct : cooldownPct;
   const phaseColor = phase === "warmup" ? "var(--warn)" : phase === "workout" ? day.color : "var(--accent-2)";
 
@@ -393,8 +463,21 @@ function GymApp() {
         </div>
       </div>
 
-      {/* Sticky phase tabs (sit just under the site nav) */}
+      {/* Sticky header (sits just under the site nav): rest timer + phase tabs.
+          Both stay pinned together while you scroll, on every phase. */}
       <div style={{ position: "sticky", top: "var(--nav-h)", zIndex: 5, background: "rgba(17, 20, 28, 0.92)", backdropFilter: "saturate(160%) blur(12px)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ borderBottom: "1px solid var(--border)" }}>
+          <RestTimer
+            active={rest.active}
+            left={rest.left}
+            dur={state.restDur}
+            color={day.color}
+            onStart={startRest}
+            onStop={stopRest}
+            onAdjust={adjustRestDur}
+            onAdd={addRest}
+          />
+        </div>
         <div style={{ display: "flex" }}>
           {PHASES.map((p) => (
             <button
@@ -436,27 +519,26 @@ function GymApp() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <strong style={{ color: "var(--text)", fontSize: 15 }}>{day.label} · {day.focus}</strong>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => startRest(90)} style={SMALL_BTN}>⏱ Rest</button>
                   <button onClick={resetDay} style={SMALL_BTN}>Reset</button>
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <div style={{ flex: 1 }}><Bar pct={workoutPct} color={day.color} /></div>
-                <span style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{doneSets}/{totalSets} sets</span>
+                <span style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{doneSets}/{totalSets} sets · {doneEx}/{totalEx} done</span>
               </div>
               <p style={{ color: "var(--muted)", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-                Rest 60–90 sec between sets — the timer starts automatically when you tick one. Tap an exercise to log weight and track sets. <span style={{ color: "var(--warn)" }}>★ Key</span> exercises are critical for your back.
+                Tap the set dots to log each set (rest auto-starts), or tap the row to mark the whole exercise done. Weights save on the card; <strong style={{ color: "var(--text)" }}>Start Rest</strong> at the top works any time. <span style={{ color: "var(--warn)" }}>★ Key</span> exercises are critical for your back.
               </p>
             </div>
             {day.exercises.map((ex, i) => (
               <ExerciseCard
                 key={i}
                 exercise={ex}
-                index={i}
                 day={day}
-                setsDone={dp.sets[i] || []}
+                count={dp.counts[i] || 0}
                 weight={state.weights[ex.name] || ""}
-                onToggleSet={(si) => toggleSet(i, si)}
+                onToggle={() => toggleExercise(i)}
+                onIncrement={() => incrementSet(i)}
                 onSetWeight={(v) => setWeight(ex.name, v)}
               />
             ))}
@@ -500,15 +582,6 @@ function GymApp() {
         </div>
       </div>
 
-      {/* Rest timer pill */}
-      {rest.active && (
-        <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 18, zIndex: 50, display: "flex", alignItems: "center", gap: 14, background: "var(--surface-2)", border: "1px solid " + day.color, borderRadius: 999, padding: "10px 16px", boxShadow: "var(--shadow)" }}>
-          <span style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>Rest</span>
-          <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", minWidth: 54, textAlign: "center" }}>{fmtTime(rest.left)}</span>
-          <button onClick={() => setRest((r) => ({ ...r, left: r.left + 15 }))} style={PILL_BTN}>+15s</button>
-          <button onClick={stopRest} style={{ ...PILL_BTN, color: "var(--text)" }}>Skip</button>
-        </div>
-      )}
     </div>
   );
 }
