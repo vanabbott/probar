@@ -11,14 +11,23 @@ import (
 	"time"
 )
 
-// workoutHTML is a self-contained React SPA (the gym workout tracker) served at
-// /workout. It loads React + Babel from a CDN and transpiles its JSX in the
-// browser, so there's no frontend build step — it stays a single Go binary.
-// Kept in its own file because the JSX uses backtick template literals, which
-// can't live in a Go raw-string literal.
+// workoutHTML is the body fragment for the /workout page — a React SPA (the gym
+// workout tracker). It is rendered into pageTmpl by the /workout handler so the
+// page shares the site nav and theme. React + ReactDOM + Babel load from a CDN
+// (see workoutHead) and the JSX is transpiled in the browser, so there's no
+// frontend build step and the service stays a single Go binary. Kept in its own
+// file because the JSX uses backtick template literals, which can't live in a
+// Go raw-string literal.
 //
 //go:embed workout.html
 var workoutHTML string
+
+// workoutHead is injected into pageTmpl's <head> for the /workout page: the
+// React, ReactDOM, and Babel standalone CDN scripts. React is pinned to 18.x
+// because React 19 dropped the UMD/global builds this approach relies on.
+const workoutHead = `  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>`
 
 const pageTmpl = `<!DOCTYPE html>
 <html lang="en">
@@ -41,6 +50,16 @@ const pageTmpl = `<!DOCTYPE html>
       --accent-soft: rgba(79, 140, 255, 0.14);
       --radius: 14px;
       --shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+      --nav-h: 64px;
+      --success: #34d399;
+      --success-soft: rgba(52, 211, 153, 0.10);
+      --success-border: rgba(52, 211, 153, 0.45);
+      --warn: #f5b54a;
+      --warn-border: rgba(245, 181, 74, 0.45);
+      --danger: #f87171;
+      --danger-soft: rgba(248, 113, 113, 0.08);
+      --danger-border: rgba(248, 113, 113, 0.35);
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -65,7 +84,8 @@ const pageTmpl = `<!DOCTYPE html>
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0.9rem 1.4rem;
+      height: var(--nav-h);
+      padding: 0 1.4rem;
       background: rgba(11, 13, 18, 0.72);
       backdrop-filter: saturate(160%%) blur(12px);
       border-bottom: 1px solid var(--border);
@@ -99,7 +119,7 @@ const pageTmpl = `<!DOCTYPE html>
     section { padding: clamp(3rem, 9vh, 6rem) 0; }
 
     .hero {
-      min-height: calc(100vh - 64px);
+      min-height: calc(100vh - var(--nav-h));
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -281,7 +301,7 @@ const pageTmpl = `<!DOCTYPE html>
     .actions { display: flex; gap: 0.7rem; margin-top: 1.2rem; flex-wrap: wrap; }
 
     .big {
-      min-height: calc(100vh - 64px);
+      min-height: calc(100vh - var(--nav-h));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -465,12 +485,11 @@ func main() {
 		renderPage(w, http.StatusOK, "probar · home", "", body)
 	})
 
-	// /workout serves a self-contained React SPA (gym workout tracker). It
-	// renders full-bleed with its own header, so it intentionally skips the
-	// shared pageTmpl chrome.
+	// /workout renders the React workout-tracker SPA through the shared page
+	// template, so it gets the site nav and theme. The CDN script tags go in the
+	// <head> slot; the mount point + component go in the body.
 	mux.HandleFunc("/workout", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, workoutHTML)
+		renderPage(w, http.StatusOK, "probar · workout", workoutHead, workoutHTML)
 	})
 
 	mux.HandleFunc("/time", func(w http.ResponseWriter, r *http.Request) {

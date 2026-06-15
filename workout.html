@@ -1,25 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Workout Tracker · probar</title>
-  <style>
-    html, body { margin: 0; background: #111827; }
-  </style>
+<!-- Body fragment for the /workout page. Rendered into the shared pageTmpl by
+     main.go (so it gets the site nav + theme tokens). React + ReactDOM + Babel
+     are loaded from a CDN via the template's <head> slot; the JSX below is
+     transpiled in the browser, so there's no frontend build step. -->
+<div id="root"></div>
 
-  <!-- React + ReactDOM (UMD globals) and Babel standalone for in-browser JSX.
-       No build step — matches probar's single-binary, zero-tooling setup.
-       React 18 is pinned because React 19 dropped the UMD/global builds. -->
-  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-</head>
-<body>
-  <div id="root"></div>
-
-  <script type="text/babel" data-presets="react">
-const { useState } = React;
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
 
 const WARMUP = [
   { name: "Treadmill or Bike", detail: "5 min easy pace — get blood moving, light sweat" },
@@ -43,7 +29,7 @@ const DAYS = [
     id: "A",
     label: "Day A",
     focus: "Push + Core",
-    color: "#3B82F6",
+    color: "#4F8CFF",
     exercises: [
       { name: "Goblet Squat", sets: 3, reps: "10", notes: "Hold dumbbell at chest, sit back and down, chest tall. Back-safe squat pattern." },
       { name: "Dumbbell Chest Press (flat bench)", sets: 3, reps: "10–12", notes: "Start light, controlled. Lower slowly (2 sec down), press up." },
@@ -59,7 +45,7 @@ const DAYS = [
     id: "B",
     label: "Day B",
     focus: "Pull + Hinge",
-    color: "#10B981",
+    color: "#6F5CFF",
     exercises: [
       { name: "Romanian Deadlift (dumbbells)", sets: 3, reps: "10", notes: "Hip hinge — NOT a regular deadlift. Soft bend in knees, push hips back, weights track down legs. Feel hamstrings stretch. Back stays flat." },
       { name: "Seated Cable Row", sets: 3, reps: "10–12", notes: "Neutral grip, pull to lower chest. Squeeze shoulder blades together at end. Don't round forward on the return." },
@@ -74,7 +60,7 @@ const DAYS = [
     id: "C",
     label: "Day C",
     focus: "Full Body + Core",
-    color: "#8B5CF6",
+    color: "#B65CFF",
     exercises: [
       { name: "Leg Press (machine)", sets: 3, reps: "12", notes: "Feet shoulder-width, mid-height on platform. Don't lock knees at top. No spinal compression — great alternative to squats." },
       { name: "Incline Dumbbell Press", sets: 3, reps: "10–12", notes: "Bench at 30–45°. Control the descent, press up and slightly in." },
@@ -87,121 +73,171 @@ const DAYS = [
   },
 ];
 
-const CheckBox = ({ checked, onChange }) => (
-  <button
-    onClick={onChange}
+// ---- persistence -----------------------------------------------------------
+const STORAGE_KEY = "probar.workout.v1";
+// Local calendar date (YYYY-MM-DD) — used to reset checkmarks at local midnight.
+const todayStr = () => {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
+
+const blankProgress = () => {
+  const p = {};
+  DAYS.forEach((d) => { p[d.id] = { sets: {}, warmup: [], cooldown: [] }; });
+  return p;
+};
+
+function initState() {
+  const base = { day: "A", phase: "warmup", date: todayStr(), progress: blankProgress(), weights: {} };
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) { saved = null; }
+  if (!saved) return base;
+
+  const merged = { ...base, ...saved };
+  // Weights persist indefinitely (last weight used per exercise name).
+  merged.weights = saved.weights || {};
+  // Checkmarks reset on a new calendar day; weights are kept.
+  if (saved.date !== todayStr()) {
+    merged.progress = blankProgress();
+    merged.date = todayStr();
+  } else {
+    const prog = blankProgress();
+    DAYS.forEach((d) => {
+      const sp = (saved.progress && saved.progress[d.id]) || {};
+      prog[d.id] = { sets: sp.sets || {}, warmup: sp.warmup || [], cooldown: sp.cooldown || [] };
+    });
+    merged.progress = prog;
+  }
+  return merged;
+}
+
+// ---- small helpers ---------------------------------------------------------
+const fmtTime = (s) => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+
+// Spread onto a non-button element to make it keyboard-activatable.
+const press = (fn) => ({
+  onClick: fn,
+  onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fn(); } },
+  role: "button",
+  tabIndex: 0,
+});
+
+function beep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = "sine"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.45);
+    o.start(); o.stop(ctx.currentTime + 0.46);
+    setTimeout(() => ctx.close(), 700);
+  } catch (e) {}
+}
+
+const SMALL_BTN = { background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+const PILL_BTN = { background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", borderRadius: 999, padding: "5px 11px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+const CTA = { width: "100%", padding: "15px", background: "linear-gradient(135deg, var(--accent), var(--accent-2))", border: "none", borderRadius: 12, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", marginTop: 10, boxShadow: "0 8px 30px rgba(79,140,255,0.35)", fontFamily: "inherit" };
+
+// ---- presentational --------------------------------------------------------
+const CheckBox = ({ checked, color }) => (
+  <span
     style={{
-      width: 26,
-      height: 26,
-      borderRadius: 6,
-      border: checked ? "none" : "2px solid #4B5563",
-      background: checked ? "#10B981" : "transparent",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      cursor: "pointer",
-      flexShrink: 0,
-      transition: "all 0.15s",
+      width: 26, height: 26, borderRadius: 7, flexShrink: 0,
+      border: checked ? "none" : "2px solid var(--border)",
+      background: checked ? (color || "var(--success)") : "transparent",
+      display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s",
     }}
   >
     {checked && (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M2.5 7L5.5 10L11.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2.5 7L5.5 10L11.5 4" stroke="#0b0d12" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     )}
-  </button>
+  </span>
 );
 
-const ExerciseCard = ({ exercise, index, dayColor }) => {
+const Bar = ({ pct, color }) => (
+  <div style={{ height: 6, background: "var(--surface-2)", borderRadius: 999, overflow: "hidden" }}>
+    <div style={{ height: "100%", width: pct + "%", background: color, borderRadius: 999, transition: "width 0.3s" }} />
+  </div>
+);
+
+const ExerciseCard = ({ exercise, index, day, setsDone, weight, onToggleSet, onSetWeight }) => {
   const [expanded, setExpanded] = useState(false);
-  const [setsDone, setSetsDone] = useState([]);
   const isKey = exercise.notes.startsWith("🔑");
   const allDone = setsDone.length === exercise.sets;
-
-  const toggleSet = (i) => {
-    setSetsDone((prev) =>
-      prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]
-    );
-  };
+  const dayColor = day.color;
 
   return (
     <div
       style={{
-        background: allDone ? "#064E3B" : "#1F2937",
-        border: `1px solid ${allDone ? "#10B981" : isKey ? "#F59E0B44" : "#374151"}`,
-        borderRadius: 12,
-        marginBottom: 10,
-        overflow: "hidden",
-        transition: "all 0.2s",
+        background: allDone ? "var(--success-soft)" : "var(--surface)",
+        border: "1px solid " + (allDone ? "var(--success-border)" : isKey ? "var(--warn-border)" : "var(--border)"),
+        borderRadius: "var(--radius)", marginBottom: 10, overflow: "hidden", transition: "all 0.2s", boxShadow: "var(--shadow-sm)",
       }}
     >
       <button
         onClick={() => setExpanded((e) => !e)}
-        style={{
-          width: "100%",
-          padding: "14px 16px",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          textAlign: "left",
-        }}
+        style={{ width: "100%", padding: "14px 16px", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, textAlign: "left", fontFamily: "inherit" }}
       >
         <span
           style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background: allDone ? "#10B981" : dayColor + "33",
-            border: `1px solid ${allDone ? "#10B981" : dayColor}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 12,
-            fontWeight: 700,
-            color: allDone ? "#fff" : dayColor,
-            flexShrink: 0,
+            width: 30, height: 30, borderRadius: "50%",
+            background: allDone ? "var(--success)" : dayColor + "26",
+            border: "1px solid " + (allDone ? "var(--success)" : dayColor),
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 12, fontWeight: 700, color: allDone ? "#0b0d12" : dayColor, flexShrink: 0,
           }}
         >
           {allDone ? "✓" : index + 1}
         </span>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#F9FAFB", fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>
-            {exercise.name}
-          </div>
-          <div style={{ color: "#9CA3AF", fontSize: 13, marginTop: 2 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: "var(--text)", fontWeight: 600, fontSize: 15, lineHeight: 1.3 }}>{exercise.name}</div>
+          <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 2 }}>
             {exercise.sets} sets × {exercise.reps}
-            {isKey && <span style={{ color: "#F59E0B", marginLeft: 6 }}>★ Key</span>}
+            {weight ? <span style={{ color: "var(--text)" }}> · {weight}</span> : null}
+            {isKey && <span style={{ color: "var(--warn)", marginLeft: 6 }}>★ Key</span>}
           </div>
         </div>
-        <span style={{ color: "#6B7280", fontSize: 18 }}>{expanded ? "▲" : "▼"}</span>
+        <span style={{ color: allDone ? "var(--success)" : "var(--muted)", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
+          {setsDone.length}/{exercise.sets}
+        </span>
+        <span style={{ color: "var(--muted)", fontSize: 15, marginLeft: 2, flexShrink: 0 }}>{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
-        <div style={{ padding: "0 16px 16px", borderTop: "1px solid #374151" }}>
-          <p style={{ color: "#D1FAE5", fontSize: 13, lineHeight: 1.6, margin: "12px 0 14px", background: "#065F4622", borderRadius: 8, padding: "10px 12px" }}>
+        <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)" }}>
+          <p style={{ color: "var(--text)", opacity: 0.82, fontSize: 13, lineHeight: 1.6, margin: "12px 0 14px", background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px" }}>
             {exercise.notes.replace("🔑 Do every session. ", "")}
           </p>
-          <div style={{ color: "#9CA3AF", fontSize: 13, marginBottom: 8, fontWeight: 600 }}>
-            Track your sets:
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--muted)", fontSize: 13, fontWeight: 600 }}>Weight</span>
+            <input
+              value={weight}
+              onChange={(e) => onSetWeight(e.target.value)}
+              placeholder="e.g. 45 lb"
+              style={{ width: 130, background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text)", padding: "8px 10px", fontSize: 14, fontFamily: "inherit" }}
+            />
+            <span style={{ color: "var(--muted)", fontSize: 11 }}>remembered for next time</span>
           </div>
+
+          <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 8, fontWeight: 600 }}>Track your sets</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {Array.from({ length: exercise.sets }).map((_, i) => (
-              <label
-                key={i}
-                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-              >
-                <CheckBox
-                  checked={setsDone.includes(i)}
-                  onChange={() => toggleSet(i)}
-                />
-                <span style={{ color: setsDone.includes(i) ? "#10B981" : "#9CA3AF", fontSize: 14 }}>
-                  Set {i + 1}
-                </span>
-              </label>
-            ))}
+            {Array.from({ length: exercise.sets }).map((_, i) => {
+              const on = setsDone.includes(i);
+              return (
+                <div key={i} {...press(() => onToggleSet(i))} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "4px 6px", borderRadius: 8 }}>
+                  <CheckBox checked={on} />
+                  <span style={{ color: on ? "var(--success)" : "var(--muted)", fontSize: 14 }}>Set {i + 1}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -209,272 +245,253 @@ const ExerciseCard = ({ exercise, index, dayColor }) => {
   );
 };
 
-const PhaseSection = ({ title, icon, items, color, type }) => {
-  const [checked, setChecked] = useState([]);
-  const toggle = (i) =>
-    setChecked((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
-
+const PhaseSection = ({ title, icon, items, color, checked, onToggle }) => {
+  const pct = items.length ? Math.round((checked.length / items.length) * 100) : 0;
   return (
     <div style={{ marginBottom: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 18 }}>{icon}</span>
         <h3 style={{ color, fontSize: 16, fontWeight: 700, margin: 0 }}>{title}</h3>
-        <span style={{ color: "#6B7280", fontSize: 13 }}>({items.length} steps)</span>
+        <span style={{ color: "var(--muted)", fontSize: 13 }}>{checked.length}/{items.length}</span>
       </div>
-      {items.map((item, i) => (
-        <div
-          key={i}
-          style={{
-            background: checked.includes(i) ? "#064E3B" : "#1F2937",
-            border: `1px solid ${checked.includes(i) ? "#10B981" : "#374151"}`,
-            borderRadius: 10,
-            padding: "12px 14px",
-            marginBottom: 8,
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-          }}
-        >
-          <CheckBox checked={checked.includes(i)} onChange={() => toggle(i)} />
-          <div>
-            <div style={{ color: "#F9FAFB", fontWeight: 600, fontSize: 14 }}>{item.name}</div>
-            <div style={{ color: "#9CA3AF", fontSize: 13, marginTop: 3, lineHeight: 1.5 }}>{item.detail}</div>
+      <div style={{ marginBottom: 14 }}><Bar pct={pct} color={color} /></div>
+      {items.map((item, i) => {
+        const on = checked.includes(i);
+        return (
+          <div
+            key={i}
+            {...press(() => onToggle(i))}
+            style={{
+              background: on ? "var(--success-soft)" : "var(--surface)",
+              border: "1px solid " + (on ? "var(--success-border)" : "var(--border)"),
+              borderRadius: 12, padding: "12px 14px", marginBottom: 8, display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer", boxShadow: "var(--shadow-sm)",
+            }}
+          >
+            <CheckBox checked={on} />
+            <div>
+              <div style={{ color: "var(--text)", fontWeight: 600, fontSize: 14 }}>{item.name}</div>
+              <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 3, lineHeight: 1.5 }}>{item.detail}</div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
 
+// ---- app -------------------------------------------------------------------
 function GymApp() {
-  const [activeTab, setActiveTab] = useState("A");
-  const [phase, setPhase] = useState("warmup"); // warmup | workout | cooldown
+  const [state, setState] = useState(initState);
+  const [rest, setRest] = useState({ active: false, left: 0 });
 
-  const day = DAYS.find((d) => d.id === activeTab);
+  // persist on every change
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }, [state]);
 
-  const phaseOrder = ["warmup", "workout", "cooldown"];
-  const phaseIndex = phaseOrder.indexOf(phase);
+  // rest countdown
+  useEffect(() => {
+    if (!rest.active) return;
+    if (rest.left <= 0) {
+      beep();
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      setRest((r) => ({ ...r, active: false, left: 0 }));
+      return;
+    }
+    const id = setTimeout(() => setRest((r) => ({ ...r, left: r.left - 1 })), 1000);
+    return () => clearTimeout(id);
+  }, [rest.active, rest.left]);
+
+  const day = DAYS.find((d) => d.id === state.day);
+  const phase = state.phase;
+  const dp = state.progress[state.day] || { sets: {}, warmup: [], cooldown: [] };
+
+  const startRest = (d) => setRest({ active: true, left: d == null ? 90 : d });
+  const stopRest = () => setRest((r) => ({ ...r, active: false }));
+
+  const setDay = (id) => setState((s) => ({ ...s, day: id, phase: "warmup" }));
+  const setPhase = (p) => setState((s) => ({ ...s, phase: p }));
+  const setWeight = (name, val) => setState((s) => ({ ...s, weights: { ...s.weights, [name]: val } }));
+
+  const toggleSet = (exIndex, setIndex) => {
+    const cur = dp.sets[exIndex] || [];
+    const willCheck = !cur.includes(setIndex);
+    setState((s) => {
+      const id = s.day;
+      const p = s.progress[id];
+      const c = p.sets[exIndex] || [];
+      const next = c.includes(setIndex) ? c.filter((x) => x !== setIndex) : [...c, setIndex].sort((a, b) => a - b);
+      return { ...s, progress: { ...s.progress, [id]: { ...p, sets: { ...p.sets, [exIndex]: next } } } };
+    });
+    if (willCheck) startRest(90); // auto rest between sets
+  };
+
+  const togglePhase = (type, i) => setState((s) => {
+    const id = s.day;
+    const p = s.progress[id];
+    const arr = p[type] || [];
+    const next = arr.includes(i) ? arr.filter((x) => x !== i) : [...arr, i];
+    return { ...s, progress: { ...s.progress, [id]: { ...p, [type]: next } } };
+  });
+
+  const resetDay = () => {
+    if (window.confirm("Reset progress for " + day.label + " today? Logged weights are kept.")) {
+      setState((s) => ({ ...s, progress: { ...s.progress, [s.day]: { sets: {}, warmup: [], cooldown: [] } } }));
+      stopRest();
+    }
+  };
+
+  // progress
+  const totalSets = day.exercises.reduce((a, e) => a + e.sets, 0);
+  const doneSets = day.exercises.reduce((a, e, i) => a + (dp.sets[i] || []).length, 0);
+  const workoutPct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+  const warmupPct = Math.round((dp.warmup.length / WARMUP.length) * 100);
+  const cooldownPct = Math.round((dp.cooldown.length / COOLDOWN.length) * 100);
+  const complete = { warmup: warmupPct === 100, workout: workoutPct === 100 && totalSets > 0, cooldown: cooldownPct === 100 };
+  const phasePct = phase === "warmup" ? warmupPct : phase === "workout" ? workoutPct : cooldownPct;
+  const phaseColor = phase === "warmup" ? "var(--warn)" : phase === "workout" ? day.color : "var(--accent-2)";
+
+  const PHASES = [
+    { id: "warmup", label: "🔥 Warm-Up" },
+    { id: "workout", label: "💪 Workout" },
+    { id: "cooldown", label: "🧊 Cool-Down" },
+  ];
 
   return (
-    <div
-      style={{
-        background: "#111827",
-        minHeight: "100vh",
-        fontFamily: "'Inter', system-ui, sans-serif",
-        maxWidth: 520,
-        margin: "0 auto",
-        paddingBottom: 40,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          background: "#1F2937",
-          padding: "20px 20px 0",
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          borderBottom: "1px solid #374151",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <span style={{ fontSize: 22 }}>🏋️</span>
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "0 0 70px" }}>
+      {/* Title + day selector (scrolls away) */}
+      <div style={{ padding: "22px 18px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+          <span style={{ fontSize: 26 }}>🏋️</span>
           <div>
-            <h1 style={{ color: "#F9FAFB", fontSize: 20, fontWeight: 800, margin: 0 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: "-0.01em", background: "linear-gradient(135deg, #ffffff 30%, #9fb8ff)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>
               Workout Tracker
             </h1>
-            <p style={{ color: "#6B7280", fontSize: 12, margin: 0 }}>Back-safe · Beginner strength</p>
+            <p style={{ color: "var(--muted)", fontSize: 12, margin: "2px 0 0" }}>Back-safe · Beginner strength</p>
           </div>
         </div>
 
-        {/* Day tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          {DAYS.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => { setActiveTab(d.id); setPhase("warmup"); }}
-              style={{
-                flex: 1,
-                padding: "10px 6px",
-                borderRadius: 8,
-                border: "none",
-                background: activeTab === d.id ? d.color : "#374151",
-                color: activeTab === d.id ? "#fff" : "#9CA3AF",
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: "pointer",
-                transition: "all 0.15s",
-              }}
-            >
-              <div>{d.label}</div>
-              <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.85, marginTop: 2 }}>{d.focus}</div>
-            </button>
-          ))}
+        <div style={{ display: "flex", gap: 8 }}>
+          {DAYS.map((d) => {
+            const active = state.day === d.id;
+            return (
+              <button
+                key={d.id}
+                onClick={() => setDay(d.id)}
+                style={{
+                  flex: 1, padding: "10px 6px", borderRadius: 10,
+                  border: "1px solid " + (active ? d.color : "var(--border)"),
+                  background: active ? d.color + "1f" : "var(--surface)",
+                  cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 14, color: active ? d.color : "var(--text)" }}>{d.label}</div>
+                <div style={{ fontSize: 10, fontWeight: 500, marginTop: 2, color: "var(--muted)" }}>{d.focus}</div>
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        {/* Phase tabs */}
-        <div style={{ display: "flex", borderTop: "1px solid #374151" }}>
-          {[
-            { id: "warmup", label: "🔥 Warm-Up" },
-            { id: "workout", label: "💪 Workout" },
-            { id: "cooldown", label: "🧊 Cool-Down" },
-          ].map((p) => (
+      {/* Sticky phase tabs (sit just under the site nav) */}
+      <div style={{ position: "sticky", top: "var(--nav-h)", zIndex: 5, background: "rgba(17, 20, 28, 0.92)", backdropFilter: "saturate(160%) blur(12px)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ display: "flex" }}>
+          {PHASES.map((p) => (
             <button
               key={p.id}
               onClick={() => setPhase(p.id)}
               style={{
-                flex: 1,
-                padding: "10px 4px",
-                border: "none",
-                background: "transparent",
-                borderBottom: phase === p.id ? `2px solid ${day.color}` : "2px solid transparent",
-                color: phase === p.id ? "#F9FAFB" : "#6B7280",
-                fontWeight: phase === p.id ? 700 : 400,
-                fontSize: 12,
-                cursor: "pointer",
-                transition: "all 0.15s",
+                flex: 1, padding: "12px 4px", border: "none", background: "transparent",
+                borderBottom: phase === p.id ? "2px solid " + day.color : "2px solid transparent",
+                color: phase === p.id ? "var(--text)" : "var(--muted)",
+                fontWeight: phase === p.id ? 700 : 500, fontSize: 13, cursor: "pointer", transition: "all 0.15s", fontFamily: "inherit",
               }}
             >
-              {p.label}
+              {p.label}{complete[p.id] && <span style={{ color: "var(--success)", marginLeft: 5 }}>✓</span>}
             </button>
           ))}
+        </div>
+        <div style={{ height: 3, background: "var(--surface-2)" }}>
+          <div style={{ height: "100%", width: phasePct + "%", background: phaseColor, transition: "width 0.3s" }} />
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: "20px 16px" }}>
+      <div style={{ padding: "18px" }}>
         {phase === "warmup" && (
           <>
-            <div
-              style={{
-                background: "#1F2937",
-                border: "1px solid #F59E0B44",
-                borderRadius: 10,
-                padding: "12px 14px",
-                marginBottom: 20,
-              }}
-            >
-              <p style={{ color: "#FCD34D", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--warn-border)", borderRadius: 12, padding: "12px 14px", marginBottom: 20, boxShadow: "var(--shadow-sm)" }}>
+              <p style={{ color: "var(--warn)", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
                 <strong>Every session starts here.</strong> Don't skip — this is especially important with your back history. Takes ~10 min.
               </p>
             </div>
-            <PhaseSection
-              title="Warm-Up"
-              icon="🔥"
-              items={WARMUP}
-              color="#F59E0B"
-              type="warmup"
-            />
-            <button
-              onClick={() => setPhase("workout")}
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: day.color,
-                border: "none",
-                borderRadius: 10,
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 16,
-                cursor: "pointer",
-              }}
-            >
-              Start Workout →
-            </button>
+            <PhaseSection title="Warm-Up" icon="🔥" items={WARMUP} color="var(--warn)" checked={dp.warmup} onToggle={(i) => togglePhase("warmup", i)} />
+            <button onClick={() => setPhase("workout")} style={CTA}>Start Workout →</button>
           </>
         )}
 
         {phase === "workout" && (
           <>
-            <div
-              style={{
-                background: "#1F2937",
-                border: `1px solid ${day.color}44`,
-                borderRadius: 10,
-                padding: "12px 14px",
-                marginBottom: 20,
-              }}
-            >
-              <p style={{ color: "#D1FAE5", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
-                <strong style={{ color: "#F9FAFB" }}>{day.label} — {day.focus}</strong>
-                <br />
-                Rest 60–90 sec between sets. Tap an exercise to expand it and track sets. ★ Key exercises are critical for your back.
+            <div style={{ background: "var(--surface)", border: "1px solid " + day.color + "55", borderRadius: 12, padding: "14px", marginBottom: 20, boxShadow: "var(--shadow-sm)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <strong style={{ color: "var(--text)", fontSize: 15 }}>{day.label} · {day.focus}</strong>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => startRest(90)} style={SMALL_BTN}>⏱ Rest</button>
+                  <button onClick={resetDay} style={SMALL_BTN}>Reset</button>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}><Bar pct={workoutPct} color={day.color} /></div>
+                <span style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>{doneSets}/{totalSets} sets</span>
+              </div>
+              <p style={{ color: "var(--muted)", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                Rest 60–90 sec between sets — the timer starts automatically when you tick one. Tap an exercise to log weight and track sets. <span style={{ color: "var(--warn)" }}>★ Key</span> exercises are critical for your back.
               </p>
             </div>
             {day.exercises.map((ex, i) => (
-              <ExerciseCard key={i} exercise={ex} index={i} dayColor={day.color} />
+              <ExerciseCard
+                key={i}
+                exercise={ex}
+                index={i}
+                day={day}
+                setsDone={dp.sets[i] || []}
+                weight={state.weights[ex.name] || ""}
+                onToggleSet={(si) => toggleSet(i, si)}
+                onSetWeight={(v) => setWeight(ex.name, v)}
+              />
             ))}
-            <button
-              onClick={() => setPhase("cooldown")}
-              style={{
-                width: "100%",
-                padding: "14px",
-                background: "#8B5CF6",
-                border: "none",
-                borderRadius: 10,
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: 16,
-                cursor: "pointer",
-                marginTop: 8,
-              }}
-            >
-              Done — Cool Down →
-            </button>
+            <button onClick={() => setPhase("cooldown")} style={CTA}>Done — Cool Down →</button>
           </>
         )}
 
         {phase === "cooldown" && (
           <>
-            <div
-              style={{
-                background: "#1F2937",
-                border: "1px solid #8B5CF644",
-                borderRadius: 10,
-                padding: "12px 14px",
-                marginBottom: 20,
-              }}
-            >
-              <p style={{ color: "#DDD6FE", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+            <div style={{ background: "var(--surface)", border: "1px solid var(--accent-2)", borderRadius: 12, padding: "12px 14px", marginBottom: 20, boxShadow: "var(--shadow-sm)" }}>
+              <p style={{ color: "#c7bdff", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
                 <strong>Don't skip this either.</strong> 5–8 minutes of stretching after every session is one of the best things you can do for your disk long-term.
               </p>
             </div>
-            <PhaseSection
-              title="Cool-Down"
-              icon="🧊"
-              items={COOLDOWN}
-              color="#8B5CF6"
-              type="cooldown"
-            />
-            <div
-              style={{
-                background: "#064E3B",
-                border: "1px solid #10B981",
-                borderRadius: 10,
-                padding: "16px",
-                textAlign: "center",
-                marginTop: 8,
-              }}
-            >
-              <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
-              <div style={{ color: "#F9FAFB", fontWeight: 700, fontSize: 16 }}>Session Complete!</div>
-              <div style={{ color: "#6EE7B7", fontSize: 13, marginTop: 4 }}>Great work. Rest up and come back strong.</div>
-            </div>
+            <PhaseSection title="Cool-Down" icon="🧊" items={COOLDOWN} color="var(--accent-2)" checked={dp.cooldown} onToggle={(i) => togglePhase("cooldown", i)} />
+            {complete.workout && complete.warmup && complete.cooldown ? (
+              <div style={{ background: "var(--success-soft)", border: "1px solid var(--success-border)", borderRadius: 12, padding: "16px", textAlign: "center", marginTop: 8 }}>
+                <div style={{ fontSize: 28, marginBottom: 6 }}>✅</div>
+                <div style={{ color: "var(--text)", fontWeight: 700, fontSize: 16 }}>Session Complete!</div>
+                <div style={{ color: "var(--success)", fontSize: 13, marginTop: 4 }}>Every phase done. Rest up and come back strong.</div>
+              </div>
+            ) : (
+              <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", textAlign: "center", marginTop: 8 }}>
+                <div style={{ color: "var(--muted)", fontSize: 13 }}>
+                  Warm-up {warmupPct}% · Workout {workoutPct}% · Cool-down {cooldownPct}%
+                </div>
+              </div>
+            )}
           </>
         )}
 
         {/* Back safety reminder */}
-        <div
-          style={{
-            background: "#1F2937",
-            border: "1px solid #EF444433",
-            borderRadius: 10,
-            padding: "12px 14px",
-            marginTop: 24,
-          }}
-        >
-          <div style={{ color: "#FCA5A5", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Back Safety Reminders</div>
-          <ul style={{ color: "#9CA3AF", fontSize: 12, margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
+        <div style={{ background: "var(--danger-soft)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: "12px 14px", marginTop: 24 }}>
+          <div style={{ color: "var(--danger)", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Back Safety Reminders</div>
+          <ul style={{ color: "var(--muted)", fontSize: 12, margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
             <li>Sharp or radiating pain → stop immediately</li>
             <li>No barbell back squats or conventional deadlifts yet</li>
             <li>Lower back always stays flat (not arched) during core work</li>
@@ -482,12 +499,20 @@ function GymApp() {
           </ul>
         </div>
       </div>
+
+      {/* Rest timer pill */}
+      {rest.active && (
+        <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 18, zIndex: 50, display: "flex", alignItems: "center", gap: 14, background: "var(--surface-2)", border: "1px solid " + day.color, borderRadius: 999, padding: "10px 16px", boxShadow: "var(--shadow)" }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>Rest</span>
+          <span className="mono" style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", minWidth: 54, textAlign: "center" }}>{fmtTime(rest.left)}</span>
+          <button onClick={() => setRest((r) => ({ ...r, left: r.left + 15 }))} style={PILL_BTN}>+15s</button>
+          <button onClick={stopRest} style={{ ...PILL_BTN, color: "var(--text)" }}>Skip</button>
+        </div>
+      )}
     </div>
   );
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(<GymApp />);
-  </script>
-</body>
-</html>
+</script>
