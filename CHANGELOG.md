@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The current version is tracked in [`VERSION`](VERSION).
 
+## [0.1.10] - 2026-06-15
+
+### Changed
+- Streamlined the `/workout` flow to be faster to use mid-set. Workout exercises
+  now match the warm-up/cool-down style: tapping the row marks the whole exercise
+  done (or clears it), and the weight field is always visible on the card instead
+  of behind a drop-down. Form cues moved behind a small "How?" toggle so rows
+  stay tidy.
+- Replaced the per-set checkbox drop-down with a lightweight inline set tracker —
+  one dot per set, tapped to log sets one at a time (wrapping back to empty once
+  full). Logging a set auto-starts the rest timer. The day progress bar tracks
+  sets completed, and the header shows both sets and exercises done.
+- The rest timer is pinned to the top of every phase (warm-up, workout,
+  cool-down), so it can be triggered any time. The length is configurable in 30s
+  steps with a default of 60s and persists across sessions. The auto-start-on-set
+  behavior and the floating bottom pill were removed in favor of this control.
+
+### Fixed
+- Same-day progress saved under the old per-set schema is migrated on load (an
+  exercise counts as done if all its sets were previously ticked), so deploying
+  this change mid-day doesn't wipe in-progress workouts. Logged weights are kept.
+
 ## [0.1.9] - 2026-06-14
 
 ### Changed
