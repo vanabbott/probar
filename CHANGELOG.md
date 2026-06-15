@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The current version is tracked in [`VERSION`](VERSION).
 
+## [0.1.9] - 2026-06-14
+
+### Changed
+- The `/workout` page is now rendered through the shared page template, so it
+  has the same sticky navbar and visual theme as the rest of the site instead of
+  being a standalone page. The tracker UI was restyled to the site's design
+  tokens (surfaces, borders, accent gradients) with a blue/purple/violet day
+  palette. The navbar uses a fixed `--nav-h` height token so the page can stick
+  its phase selector neatly beneath it; added `--success`, `--warn`, and
+  `--danger` tokens to the shared palette.
+
+### Added
+- Workout progress is saved to `localStorage` — sets, warm-up/cool-down checks,
+  the selected day/phase, and per-exercise weights all survive reloads and
+  navigation. Checkmarks reset on a new local day; logged weights are kept.
+- Per-phase progress bars plus a slim progress strip under the sticky phase tabs.
+- An automatic rest timer that starts when you tick a set (with +15s/skip and an
+  end-of-rest beep), per-exercise weight logging remembered across sessions, and
+  a reset-day button.
+
 ## [0.1.8] - 2026-06-14
 
 ### Added
