@@ -9,7 +9,8 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-COPY main.go workout.html ./
+COPY *.go seed_program.json ./
+COPY workout ./workout
 
 # Optional: build args for version metadata. Remove these three ARG lines
 # and the -ldflags flag below if your code doesn't have version vars.
@@ -19,8 +20,8 @@ ARG BUILD_TIME=unknown
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build \
-      -o /app main.go
+    CGO_ENABLED=0 go build \
+      -o /app .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /app /app

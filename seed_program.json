@@ -1,0 +1,70 @@
+{
+  "id": "prog_seed_fullbody",
+  "name": "Back-Safe Full Body",
+  "author": "seed",
+  "createdAt": "2026-06-14",
+  "coachNote": "Your starter block — a back-safe A/B/C full-body split. Warm up every session, keep the key movements (Face Pull, Bird-Dog) in, and log your weights so your coach can progress you.",
+  "warmup": [
+    { "name": "Treadmill or Bike", "detail": "5 min easy pace — get blood moving, light sweat" },
+    { "name": "Hip Circle (each side)", "detail": "10 reps/side — hands on hips, slow controlled circles" },
+    { "name": "Cat-Cow", "detail": "10 reps — on all fours, arch and round your back slowly" },
+    { "name": "Glute Bridge", "detail": "15 reps — lie on back, feet flat, drive hips up and squeeze" },
+    { "name": "Thoracic Rotation", "detail": "8 reps/side — seated or kneeling, rotate upper back only" },
+    { "name": "Band Pull-Apart (or arms only)", "detail": "15 reps — arms at shoulder height, pull apart and squeeze shoulder blades" }
+  ],
+  "cooldown": [
+    { "name": "Hip Flexor Stretch", "detail": "30 sec/side — kneeling lunge position, sink hips forward" },
+    { "name": "Hamstring Stretch", "detail": "30 sec/side — seated or standing, keep back flat" },
+    { "name": "Child's Pose", "detail": "45 sec — arms extended, let lower back decompress" },
+    { "name": "Thoracic Extension over Bench", "detail": "30 sec — sit on bench edge, clasp hands behind head, extend upper back over edge gently" },
+    { "name": "Deep Breathing", "detail": "1 min — diaphragmatic breaths, in through nose, out through mouth" }
+  ],
+  "days": [
+    {
+      "id": "A",
+      "label": "Day A",
+      "focus": "Push + Core",
+      "color": "#4F8CFF",
+      "exercises": [
+        { "name": "Goblet Squat", "sets": 3, "reps": "10", "rest": 90, "notes": "Hold dumbbell at chest, sit back and down, chest tall. Back-safe squat pattern." },
+        { "name": "Dumbbell Chest Press (flat bench)", "sets": 3, "reps": "10–12", "rest": 90, "notes": "Start light, controlled. Lower slowly (2 sec down), press up." },
+        { "name": "Cable Lateral Raise", "sets": 3, "reps": "12–15", "rest": 60, "notes": "Light weight, shoulder health. Slight bend in elbow, raise to shoulder height." },
+        { "name": "Overhead Tricep Extension (cable)", "sets": 3, "reps": "12", "rest": 60, "notes": "Rope attachment, elbows stay in place, extend fully." },
+        { "name": "Face Pull (cable, rope)", "sets": 3, "reps": "15", "rest": 60, "key": true, "notes": "Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+        { "name": "Bird-Dog", "sets": 3, "reps": "8/side", "rest": 45, "key": true, "notes": "On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+        { "name": "Dead Bug", "sets": 3, "reps": "8/side", "rest": 45, "notes": "Lie on back, arms up, knees at 90°. Lower one arm + opposite leg simultaneously, lower back stays FLAT on floor." },
+        { "name": "Plank", "sets": 3, "reps": "20–30 sec", "rest": 45, "notes": "Forearms or hands. Squeeze glutes, don't let hips sag. Build duration over time." }
+      ]
+    },
+    {
+      "id": "B",
+      "label": "Day B",
+      "focus": "Pull + Hinge",
+      "color": "#6F5CFF",
+      "exercises": [
+        { "name": "Romanian Deadlift (dumbbells)", "sets": 3, "reps": "10", "rest": 90, "notes": "Hip hinge — NOT a regular deadlift. Soft bend in knees, push hips back, weights track down legs. Feel hamstrings stretch. Back stays flat." },
+        { "name": "Seated Cable Row", "sets": 3, "reps": "10–12", "rest": 90, "notes": "Neutral grip, pull to lower chest. Squeeze shoulder blades together at end. Don't round forward on the return." },
+        { "name": "Lat Pulldown", "sets": 3, "reps": "10–12", "rest": 90, "notes": "Wide overhand grip. Pull bar to upper chest, lean back slightly. Controlled on the way up." },
+        { "name": "Dumbbell Curl", "sets": 3, "reps": "12", "rest": 60, "notes": "Elbows stay at sides. Full range of motion. No swinging." },
+        { "name": "Face Pull (cable, rope)", "sets": 3, "reps": "15", "rest": 60, "key": true, "notes": "Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+        { "name": "Bird-Dog", "sets": 3, "reps": "8/side", "rest": 45, "key": true, "notes": "On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+        { "name": "McGill Curl-Up", "sets": 3, "reps": "8", "rest": 45, "notes": "Back-safe ab work. One knee bent, hands under lower back to preserve its curve. Lift only head and shoulders slightly. Hold 10 sec each rep." }
+      ]
+    },
+    {
+      "id": "C",
+      "label": "Day C",
+      "focus": "Full Body + Core",
+      "color": "#B65CFF",
+      "exercises": [
+        { "name": "Leg Press (machine)", "sets": 3, "reps": "12", "rest": 90, "notes": "Feet shoulder-width, mid-height on platform. Don't lock knees at top. No spinal compression — great alternative to squats." },
+        { "name": "Incline Dumbbell Press", "sets": 3, "reps": "10–12", "rest": 90, "notes": "Bench at 30–45°. Control the descent, press up and slightly in." },
+        { "name": "Single-Arm Dumbbell Row", "sets": 3, "reps": "10/side", "rest": 60, "notes": "Brace on bench with hand and knee. Pull elbow straight back and up. Back stays flat and parallel to floor." },
+        { "name": "Cable Pull-Through", "sets": 3, "reps": "12", "rest": 60, "notes": "Low cable, rope attachment, face away. Hinge at hips and drive them forward to stand. Teaches safe hip hinge pattern." },
+        { "name": "Face Pull (cable, rope)", "sets": 3, "reps": "15", "rest": 60, "key": true, "notes": "Set cable at upper chest/face height. Pull rope to forehead, flare elbows high. Crucial for posture & shoulder health." },
+        { "name": "Bird-Dog", "sets": 3, "reps": "8/side", "rest": 45, "key": true, "notes": "On all fours — extend opposite arm and leg, hold 2 sec, return. No hip rotation. Core must stay braced." },
+        { "name": "Pallof Press (cable)", "sets": 3, "reps": "10/side", "rest": 45, "notes": "Stand sideways to cable machine. Press cable straight out from chest, hold 2 sec, return. Anti-rotation core — excellent for disk recovery." }
+      ]
+    }
+  ]
+}
