@@ -8,7 +8,7 @@ image:
   repository: harbor.k8s.home/probar/web-app
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "0.1.2"
+  tag: "0.2.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -28,8 +28,10 @@ serviceAccount:
 podAnnotations: {}
 podLabels: {}
 
-podSecurityContext: {}
-  # fsGroup: 2000
+# fsGroup lets the non-root distroless user (uid/gid 65532) write to the
+# mounted data PVC.
+podSecurityContext:
+  fsGroup: 65532
 
 securityContext: {}
   # capabilities:
@@ -38,6 +40,28 @@ securityContext: {}
   # readOnlyRootFilesystem: true
   # runAsNonRoot: true
   # runAsUser: 1000
+
+# Persistent storage for the workout data (programs, sessions, settings,
+# profile). Mounted at persistence.mountPath, which PROBAR_DATA_DIR must match.
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  # storageClass "" uses the cluster default; set to pin a specific class.
+  storageClass: ""
+  mountPath: /data
+
+# Extra environment for the container. PROBAR_DATA_DIR must match
+# persistence.mountPath. Uncomment PROBAR_WRITE_TOKEN (from a Secret) to require
+# a bearer token on API writes.
+env:
+  - name: PROBAR_DATA_DIR
+    value: /data
+  # - name: PROBAR_WRITE_TOKEN
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: probar-write-token
+  #       key: token
 
 service:
   type: ClusterIP

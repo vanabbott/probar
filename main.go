@@ -1,26 +1,28 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"fmt"
 	"html"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"time"
 )
 
-// workoutHTML is the body fragment for the /workout page — a React SPA (the gym
-// workout tracker). It is rendered into pageTmpl by the /workout handler so the
-// page shares the site nav and theme. React + ReactDOM + Babel load from a CDN
-// (see workoutHead) and the JSX is transpiled in the browser, so there's no
-// frontend build step and the service stays a single Go binary. Kept in its own
-// file because the JSX uses backtick template literals, which can't live in a
-// Go raw-string literal.
+// workoutFS holds the /workout page sources: an index.html shell plus numbered
+// .jsx files that make up the React SPA (the gym workout tracker). The handler
+// assembles them into the page body (see buildWorkoutBody) and renders it into
+// pageTmpl so the page shares the site nav and theme. React + ReactDOM + Babel
+// load from a CDN (see workoutHead) and the JSX is transpiled in the browser, so
+// there's no frontend build step and the service stays a single Go binary.
 //
-//go:embed workout.html
-var workoutHTML string
+//go:embed workout/*
+var workoutFS embed.FS
 
 // workoutHead is injected into pageTmpl's <head> for the /workout page: the
 // React, ReactDOM, and Babel standalone CDN scripts. React is pinned to 18.x
@@ -466,6 +468,43 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+// buildWorkoutBody assembles the /workout page body from the embedded workout/
+// directory: the index.html shell followed by every .jsx file (in filename
+// order) as its own <script type="text/babel"> block. Splitting the SPA across
+// files keeps it maintainable; Babel transpiles each block in the browser. The
+// blocks share scope through a small window.PB namespace (see workout/10_lib.jsx),
+// so load order — fixed by the numeric filename prefixes — is all that matters.
+func buildWorkoutBody() (string, error) {
+	shell, err := workoutFS.ReadFile("workout/index.html")
+	if err != nil {
+		return "", err
+	}
+	entries, err := fs.ReadDir(workoutFS, "workout")
+	if err != nil {
+		return "", err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsx") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	b.Write(shell)
+	for _, n := range names {
+		src, err := workoutFS.ReadFile("workout/" + n)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString("\n<script type=\"text/babel\" data-presets=\"react\">\n")
+		b.Write(src)
+		b.WriteString("\n</script>\n")
+	}
+	return b.String(), nil
+}
+
 func renderPage(w http.ResponseWriter, status int, title, head, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
@@ -473,7 +512,23 @@ func renderPage(w http.ResponseWriter, status int, title, head, body string) {
 }
 
 func main() {
+	dataDir := os.Getenv("PROBAR_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/data"
+	}
+	store, err := NewStore(dataDir)
+	if err != nil {
+		log.Fatalf("store init: %v", err)
+	}
+
+	workoutBody, err := buildWorkoutBody()
+	if err != nil {
+		log.Fatalf("build workout page: %v", err)
+	}
+
 	mux := http.NewServeMux()
+	newAPI(store, os.Getenv("PROBAR_WRITE_TOKEN")).register(mux)
+	log.Printf("data dir: %s", dataDir)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -489,7 +544,7 @@ func main() {
 	// template, so it gets the site nav and theme. The CDN script tags go in the
 	// <head> slot; the mount point + component go in the body.
 	mux.HandleFunc("/workout", func(w http.ResponseWriter, r *http.Request) {
-		renderPage(w, http.StatusOK, "probar · workout", workoutHead, workoutHTML)
+		renderPage(w, http.StatusOK, "probar · workout", workoutHead, workoutBody)
 	})
 
 	mux.HandleFunc("/time", func(w http.ResponseWriter, r *http.Request) {
@@ -515,6 +570,11 @@ func main() {
 	})
 
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if store == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintln(w, "not ready")
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ready")
 	})

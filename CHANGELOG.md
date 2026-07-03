@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The current version is tracked in [`VERSION`](VERSION).
 
+## [0.2.0] - 2026-07-03
+
+### Added
+- The `/workout` page is now a **dynamic, data-driven personal training app**
+  backed by a small JSON store on a persistent volume (no database; the binary
+  stays dependency-free and distroless). Workouts are no longer hardcoded.
+  - **Programs library** — the workout lives in `programs.json` as one of many
+    switchable programs; the original A/B/C split is seeded on first boot.
+  - **REST API** under `/api` (`programs`, `sessions`, `settings`, `profile`)
+    using Go 1.22 method routing, with an optional `PROBAR_WRITE_TOKEN` guard on
+    writes. Data persists across restarts on the mounted PVC.
+  - **Claude as coach** — a scheduled agent reads your history and live-uploads a
+    new program every couple of weeks; the app shows a "New block from your coach"
+    banner to review and accept (see `coach/`). No rebuild needed for new
+    workouts.
+  - **In-app builder** — create and edit your own custom programs.
+  - **History tab** — a contribution-calendar heatmap, a weekly-goal ring
+    (default 3 gym days/week), current/longest **week-streak**, totals, a logged
+    session list, and **achievement badges**.
+  - **Progress tab** — per-exercise weight-over-time charts and personal records.
+- The SPA is split into maintainable `workout/*.jsx` files (still no build step;
+  Babel transpiles them in the browser, one Go binary).
+
+### Changed
+- The rest timer is now **wall-clock based**, so backgrounding the tab or
+  switching apps no longer freezes or drifts the countdown.
+- Kept the 0.1.10 in-gym quick-log UX (tap-to-complete rows, inline set-dots,
+  always-visible weight, "How?" cues, the pinned configurable rest timer) and
+  carried it onto the active program.
+- Bumped to 0.2.0; the Helm chart gained a PVC (`persistence.*`),
+  `PROBAR_DATA_DIR`, and `fsGroup` so the non-root container can write the data.
+
 ## [0.1.10] - 2026-06-15
 
 ### Changed
