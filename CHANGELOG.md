@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The current version is tracked in [`VERSION`](VERSION).
 
+## [0.2.1] - 2026-07-14
+
+### Fixed
+- Coach Profile editor: the Equipment, Injuries, and Hard-constraints fields now
+  accept the Enter key. Previously each keystroke re-split the textarea and
+  dropped empty lines, so pressing Enter immediately erased the new blank line
+  and made it impossible to add a second item. The raw text is now kept while
+  editing and only trimmed into a list on save.
+
 ## [0.2.0] - 2026-07-03
 
 ### Added
