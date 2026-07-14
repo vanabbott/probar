@@ -17,12 +17,18 @@ function AuthorTag({ author }) {
   return <span style={{ background: s.bg, color: s.fg, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</span>;
 }
 
+const LIST_KEYS = ["equipment", "injuries", "constraints"];
+// Store list fields as raw text while editing so newlines (and blank lines in
+// progress) survive keystrokes; split/trim into arrays only on save.
+const toForm = (p) => ({ ...p, ...Object.fromEntries(LIST_KEYS.map((k) => [k, (p[k] || []).join("\n")])) });
+const fromForm = (f) => ({ ...f, ...Object.fromEntries(LIST_KEYS.map((k) => [k, (f[k] || "").split("\n").map((x) => x.trim()).filter(Boolean)])) });
+
 function ProfileEditor({ profile, onSave }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(profile);
+  const [form, setForm] = useState(() => toForm(profile));
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const listField = (k) => (form[k] || []).join("\n");
-  const setList = (k, v) => set(k, v.split("\n").map((x) => x.trim()).filter(Boolean));
+  const listField = (k) => form[k] || "";
+  const setList = (k, v) => set(k, v);
   const area = { ...INPUT, width: "100%", minHeight: 60, resize: "vertical", marginTop: 4 };
   const label = { fontSize: 12, fontWeight: 600, color: "var(--muted)", marginTop: 12, display: "block" };
 
@@ -55,7 +61,7 @@ function ProfileEditor({ profile, onSave }) {
           <textarea value={listField("constraints")} onChange={(e) => setList("constraints", e.target.value)} style={{ ...area, minHeight: 90 }} />
           <label style={label}>Preferences</label>
           <textarea value={form.preferences || ""} onChange={(e) => set("preferences", e.target.value)} style={area} />
-          <button onClick={() => onSave(form)} style={{ ...CTA, marginTop: 16 }}>Save profile</button>
+          <button onClick={() => onSave(fromForm(form))} style={{ ...CTA, marginTop: 16 }}>Save profile</button>
         </div>
       )}
     </div>
