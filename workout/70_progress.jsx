@@ -15,12 +15,35 @@ function ProgressTab({ data }) {
   );
   const prNames = Object.keys(prs).sort();
 
+  // Swim distance over time. SparkChart reads `.weight`, so the distance is mapped
+  // onto that key rather than given its own chart component.
+  const swimPts = useMemo(
+    () => sessions
+      .filter((s) => typeof s.distance === "number" && s.distance > 0)
+      .slice()
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .map((s) => ({ date: s.date, weight: s.distance, unit: s.distanceUnit || "yd" })),
+    [sessions]
+  );
+
   return (
     <div style={{ padding: "20px 18px" }}>
       <h1 style={{ fontSize: 22, fontWeight: 800, margin: "0 0 4px" }}>Progress</h1>
       <p style={{ color: "var(--muted)", fontSize: 13, margin: "0 0 20px" }}>Weight logged over time, and your personal records.</p>
 
-      {names.length === 0 && <Banner tone="accent" title="No weights logged yet">Log weights while you train and your progress charts and PRs will build up here.</Banner>}
+      {names.length === 0 && swimPts.length === 0 && <Banner tone="accent" title="No weights logged yet">Log weights while you train and your progress charts and PRs will build up here.</Banner>}
+
+      {swimPts.length > 0 && (
+        <div style={{ ...CARD, padding: 16, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+            <strong style={{ fontSize: 14, color: "var(--text)" }}>🏊 Swim distance</strong>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>
+              {swimPts[swimPts.length - 1].weight} {swimPts[swimPts.length - 1].unit}
+            </span>
+          </div>
+          <SparkChart points={swimPts} />
+        </div>
+      )}
 
       {prNames.length > 0 && (
         <div style={{ ...CARD, padding: 16, marginBottom: 22 }}>

@@ -10,47 +10,52 @@
 # save the JSON it returns to block.json, then run `propose block.json`.
 #
 # Config via env:
-#   PROBAR_URL          base URL (default http://probar.k8s.home)
+#   PROBAR_URL          base URL (default https://probar.k8s.home)
 #   PROBAR_WRITE_TOKEN  bearer token, only if the server sets one
+#   PROBAR_INSECURE     set to 1 to skip TLS verification (-k), for hosts that
+#                       do not trust the cluster's internal CA
 #
 # Note: run this from a machine on the same LAN as the cluster (nothing is
 # exposed to the public internet).
 set -eo pipefail
 
-BASE="${PROBAR_URL:-http://probar.k8s.home}"
+BASE="${PROBAR_URL:-https://probar.k8s.home}"
 TOKEN="${PROBAR_WRITE_TOKEN:-}"
 
 auth=()
 if [ -n "$TOKEN" ]; then auth=(-H "Authorization: Bearer $TOKEN"); fi
 
+insecure=()
+if [ -n "${PROBAR_INSECURE:-}" ]; then insecure=(-k); fi
+
 cmd="${1:-context}"
 case "$cmd" in
   context)
-    echo "### PROFILE";                 curl -fsSL "$BASE/api/profile"
-    echo; echo "### SETTINGS";          curl -fsSL "$BASE/api/settings"
-    echo; echo "### PROGRAMS (library)"; curl -fsSL "$BASE/api/programs"
-    echo; echo "### SESSIONS (history)"; curl -fsSL "$BASE/api/sessions"
+    echo "### PROFILE";                 curl -fsSL "${insecure[@]}" "$BASE/api/profile"
+    echo; echo "### SETTINGS";          curl -fsSL "${insecure[@]}" "$BASE/api/settings"
+    echo; echo "### PROGRAMS (library)"; curl -fsSL "${insecure[@]}" "$BASE/api/programs"
+    echo; echo "### SESSIONS (history)"; curl -fsSL "${insecure[@]}" "$BASE/api/sessions"
     echo
     ;;
 
   propose)
     file="${2:?usage: $0 propose block.json}"
-    id=$(curl -fsSL "${auth[@]}" -X POST "$BASE/api/programs" \
+    id=$(curl -fsSL "${insecure[@]}" "${auth[@]}" -X POST "$BASE/api/programs" \
            -H 'Content-Type: application/json' --data-binary @"$file" \
          | python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])')
     echo "uploaded program: $id"
-    curl -fsSL "$BASE/api/settings" \
+    curl -fsSL "${insecure[@]}" "$BASE/api/settings" \
       | python3 -c "import sys,json; s=json.load(sys.stdin); s['proposedProgramId']='$id'; print(json.dumps(s))" \
-      | curl -fsSL "${auth[@]}" -X PUT "$BASE/api/settings" \
+      | curl -fsSL "${insecure[@]}" "${auth[@]}" -X PUT "$BASE/api/settings" \
           -H 'Content-Type: application/json' --data-binary @- >/dev/null
     echo "marked as proposed — review it on the app's Programs tab."
     ;;
 
   activate)
     id="${2:?usage: $0 activate <programId>}"
-    curl -fsSL "$BASE/api/settings" \
+    curl -fsSL "${insecure[@]}" "$BASE/api/settings" \
       | python3 -c "import sys,json; s=json.load(sys.stdin); s['activeProgramId']='$id'; s['proposedProgramId']=''; print(json.dumps(s))" \
-      | curl -fsSL "${auth[@]}" -X PUT "$BASE/api/settings" \
+      | curl -fsSL "${insecure[@]}" "${auth[@]}" -X PUT "$BASE/api/settings" \
           -H 'Content-Type: application/json' --data-binary @- >/dev/null
     echo "activated $id"
     ;;

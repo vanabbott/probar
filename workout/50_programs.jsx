@@ -26,6 +26,10 @@ const fromForm = (f) => ({ ...f, ...Object.fromEntries(LIST_KEYS.map((k) => [k, 
 function ProfileEditor({ profile, onSave }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(() => toForm(profile));
+  // The form snapshots the profile at mount, so a profile changed elsewhere (a
+  // coach run, another device) would be silently reverted by the next Save. Re-sync
+  // while the card is collapsed — never mid-edit, which would eat what you typed.
+  useEffect(() => { if (!open) setForm(toForm(profile)); }, [profile, open]);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const listField = (k) => form[k] || "";
   const setList = (k, v) => set(k, v);

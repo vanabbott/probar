@@ -188,3 +188,105 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Errorf("sessions = %d, want 20", len(s.Sessions("")))
 	}
 }
+
+// A partial PUT must not null the hard safety constraints. This is the exact bug
+// that silently emptied them in production: SetProfile was a blind whole-object
+// replace, so any caller omitting the key wiped the coach's guardrail.
+func TestSetProfilePreservesOmittedLists(t *testing.T) {
+	s := newTestStore(t)
+
+	before := s.Profile()
+	if len(before.Constraints) == 0 {
+		t.Fatal("seeded profile should have constraints")
+	}
+
+	// Simulate a partial write: goals only, every list omitted (nil).
+	got, err := s.SetProfile(Profile{Goals: "just the goals"})
+	if err != nil {
+		t.Fatalf("SetProfile: %v", err)
+	}
+	if got.Goals != "just the goals" {
+		t.Errorf("goals = %q, want the new value", got.Goals)
+	}
+	if len(got.Constraints) != len(before.Constraints) {
+		t.Errorf("constraints = %d, want %d preserved", len(got.Constraints), len(before.Constraints))
+	}
+	if len(got.Equipment) != len(before.Equipment) {
+		t.Errorf("equipment = %d, want %d preserved", len(got.Equipment), len(before.Equipment))
+	}
+	if len(got.Injuries) != len(before.Injuries) {
+		t.Errorf("injuries = %d, want %d preserved", len(got.Injuries), len(before.Injuries))
+	}
+}
+
+// An explicit empty array still clears a list — the UI always sends arrays, so
+// the merge must not make lists permanently unclearable.
+func TestSetProfileExplicitEmptyClears(t *testing.T) {
+	s := newTestStore(t)
+
+	got, err := s.SetProfile(Profile{Goals: "g", Constraints: []string{}})
+	if err != nil {
+		t.Fatalf("SetProfile: %v", err)
+	}
+	if len(got.Constraints) != 0 {
+		t.Errorf("constraints = %d, want 0 (explicit [] should clear)", len(got.Constraints))
+	}
+}
+
+// A profile.json already on disk with "constraints": null must self-repair on
+// load, so an existing deployment doesn't stay unguarded.
+func TestLoadBackfillsNullConstraints(t *testing.T) {
+	dir := t.TempDir()
+	bad := `{"goals":"g","experience":"Intermediate","daysPerWeek":3,` +
+		`"equipment":["dumbbells"],"injuries":["disk"],"constraints":null,` +
+		`"preferences":"p","notes":"n"}`
+	if err := os.WriteFile(filepath.Join(dir, "profile.json"), []byte(bad), 0o644); err != nil {
+		t.Fatalf("write profile.json: %v", err)
+	}
+
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	prof := s.Profile()
+	if len(prof.Constraints) == 0 {
+		t.Fatal("constraints should have been backfilled from defaults")
+	}
+	if prof.Goals != "g" {
+		t.Errorf("goals = %q, want the on-disk value preserved", prof.Goals)
+	}
+
+	// And the repair must be persisted, not just in memory.
+	s2, err := NewStore(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if len(s2.Profile().Constraints) == 0 {
+		t.Error("backfill was not written to disk")
+	}
+}
+
+func TestSessionValidate(t *testing.T) {
+	ok := []Session{
+		{RPE: 0},
+		{RPE: 1},
+		{RPE: 10},
+		{Distance: 0},
+		{Distance: 1000, DistanceUnit: "yd"},
+	}
+	for _, se := range ok {
+		if err := se.Validate(); err != nil {
+			t.Errorf("Validate(%+v) = %v, want nil", se, err)
+		}
+	}
+	bad := []Session{
+		{RPE: 11},
+		{RPE: -1},
+		{Distance: -1},
+	}
+	for _, se := range bad {
+		if err := se.Validate(); err == nil {
+			t.Errorf("Validate(%+v) = nil, want error", se)
+		}
+	}
+}

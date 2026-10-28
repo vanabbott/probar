@@ -189,3 +189,103 @@ func TestMethodNotAllowed(t *testing.T) {
 		t.Errorf("DELETE /api/programs = %d, want 405", status)
 	}
 }
+
+// A session carrying RPE, a note, and swim distance must round-trip intact —
+// these are the fields the coach reads to decide progression, and before 0.3.0
+// nothing could write them.
+func TestSessionCoachFieldsRoundTrip(t *testing.T) {
+	ts := testServer(t, "")
+
+	sess := `{"date":"2026-10-28","programId":"prog_seed_fullbody","dayId":"A",` +
+		`"rpe":8,"note":"back felt fine, swim after",` +
+		`"activity":"Freestyle swim","distance":1000,"distanceUnit":"yd",` +
+		`"exercises":[{"name":"Goblet Squat","setsPlanned":3,"setsCompleted":3,"weight":50,"unit":"lb"}]}`
+	status, body := do(t, ts, "POST", "/api/sessions", "", sess)
+	if status != 201 {
+		t.Fatalf("create status = %d, body=%s", status, body)
+	}
+
+	_, body = do(t, ts, "GET", "/api/sessions", "", "")
+	var list []Session
+	json.Unmarshal(body, &list)
+	if len(list) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(list))
+	}
+	got := list[0]
+	if got.RPE != 8 {
+		t.Errorf("rpe = %d, want 8", got.RPE)
+	}
+	if got.Note != "back felt fine, swim after" {
+		t.Errorf("note = %q", got.Note)
+	}
+	if got.Activity != "Freestyle swim" || got.Distance != 1000 || got.DistanceUnit != "yd" {
+		t.Errorf("activity/distance = %q/%v/%q, want Freestyle swim/1000/yd", got.Activity, got.Distance, got.DistanceUnit)
+	}
+}
+
+// A session with no coach fields must not sprout zero values — omitempty keeps
+// existing sessions.json byte-identical.
+func TestSessionWithoutCoachFieldsOmitsThem(t *testing.T) {
+	ts := testServer(t, "")
+
+	sess := `{"date":"2026-10-28","programId":"prog_seed_fullbody","dayId":"A","exercises":[]}`
+	if status, body := do(t, ts, "POST", "/api/sessions", "", sess); status != 201 {
+		t.Fatalf("create status = %d, body=%s", status, body)
+	}
+	_, body := do(t, ts, "GET", "/api/sessions", "", "")
+	for _, k := range []string{"rpe", "note", "activity", "distance", "distanceUnit"} {
+		if strings.Contains(string(body), `"`+k+`"`) {
+			t.Errorf("response unexpectedly contains %q: %s", k, body)
+		}
+	}
+}
+
+func TestSessionValidationRejectsBadFields(t *testing.T) {
+	ts := testServer(t, "")
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"rpe above range", `{"dayId":"A","rpe":47,"exercises":[]}`},
+		{"rpe negative", `{"dayId":"A","rpe":-1,"exercises":[]}`},
+		{"negative distance", `{"dayId":"A","distance":-5,"exercises":[]}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status, body := do(t, ts, "POST", "/api/sessions", "", c.body)
+			if status != 400 {
+				t.Errorf("status = %d, want 400 (body=%s)", status, body)
+			}
+		})
+	}
+
+	// Boundaries must be accepted, or the UI's 1-10 picker would be rejected.
+	for _, rpe := range []string{"0", "1", "10"} {
+		status, body := do(t, ts, "POST", "/api/sessions", "", `{"dayId":"A","rpe":`+rpe+`,"exercises":[]}`)
+		if status != 201 {
+			t.Errorf("rpe %s: status = %d, want 201 (body=%s)", rpe, status, body)
+		}
+	}
+}
+
+// A standalone swim (no program, no exercises) must be storable — the user
+// sometimes swims on days they don't lift.
+func TestStandaloneSwimSession(t *testing.T) {
+	ts := testServer(t, "")
+
+	sess := `{"date":"2026-10-28","programId":"","dayId":"Swim","exercises":[],` +
+		`"activity":"Freestyle swim","distance":1200,"distanceUnit":"yd"}`
+	status, body := do(t, ts, "POST", "/api/sessions", "", sess)
+	if status != 201 {
+		t.Fatalf("create status = %d, body=%s", status, body)
+	}
+	var created Session
+	json.Unmarshal(body, &created)
+	if created.ID == "" {
+		t.Fatal("standalone swim missing id")
+	}
+	if created.Distance != 1200 || created.DayID != "Swim" {
+		t.Errorf("distance/dayId = %v/%q, want 1200/Swim", created.Distance, created.DayID)
+	}
+}

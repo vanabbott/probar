@@ -34,7 +34,7 @@ Great for building trust before automating.
 ### 2. Scheduled Claude routine (set-and-forget)
 Use the `/schedule` skill (or Claude Code's routines) to run the same instruction
 every ~2 weeks on your Mac. Point it at this repo so it can read `PROMPT.md` and
-run the script. Set `PROBAR_URL` if the app isn't at `http://probar.k8s.home`.
+run the script. Set `PROBAR_URL` if the app isn't at `https://probar.k8s.home`.
 
 ### 3. In-cluster CronWorkflow (fully autonomous)
 Mirror the existing CI poller (`ci-platform/`) with an Argo `CronWorkflow` that,
@@ -46,8 +46,9 @@ every two weeks, runs a small container which calls the Anthropic API with
 
 | Env | Default | Notes |
 |-----|---------|-------|
-| `PROBAR_URL` | `http://probar.k8s.home` | Base URL of the app. |
+| `PROBAR_URL` | `https://probar.k8s.home` | Base URL of the app. |
 | `PROBAR_WRITE_TOKEN` | _(unset)_ | Only needed if the server sets `PROBAR_WRITE_TOKEN`; sent as a bearer token on writes. |
+| `PROBAR_INSECURE` | _(unset)_ | Set to `1` to skip TLS verification (`curl -k`). Only needed on a machine that does not trust the cluster's internal CA. |
 
 ## Example
 

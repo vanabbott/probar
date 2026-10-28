@@ -5,6 +5,58 @@ All notable changes to probar are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The current version is tracked in [`VERSION`](VERSION).
+## [0.3.0] - 2026-10-28
+
+### Added
+- **Post-workout wrap-up.** Finishing a session now opens a sheet that captures
+  an **RPE** (1–10, how hard the whole session felt), an optional **note**, and
+  an optional **swim distance**. `Session.RPE`/`Note` existed server-side since
+  0.2.0 but nothing in the UI ever wrote them, so the coach was reading training
+  through set counts alone. Both are skippable — `Skip & just log it` stores the
+  session exactly as before. The sheet replaces the old `confirm()` dialog, so
+  finishing costs no extra taps.
+- **Conditioning logging.** New optional session fields `activity`, `distance`,
+  and `distanceUnit` record work that isn't sets and reps — e.g. the lap swim
+  that follows a lifting session. They're session-level rather than per-exercise
+  so distance never leaks into the PR or set math. Swims can ride along with a
+  strength session (via the wrap-up sheet) or be logged on their own from
+  History → `+ Log a swim`. History shows yardage per session and a running
+  total; Progress charts distance over time.
+- Session validation: `rpe` outside 0–10 and a negative `distance` are now
+  rejected with 400 instead of being stored and quietly skewing the next
+  coaching decision.
+
+### Fixed
+- **`PUT /api/profile` no longer nulls lists it wasn't given.** `SetProfile` was
+  a blind whole-object replace, so any partial write — a hand-rolled curl, a
+  coach run sending only `goals` — silently emptied `constraints`, the one field
+  the coach prompt treats as non-negotiable. A nil list is now treated as "not
+  supplied" and keeps its current value; an explicit `[]` still clears it.
+- **An already-nulled `constraints` self-repairs on load** from
+  `defaultProfile()`, so an existing deployment doesn't stay unguarded.
+- **The Train tab's "⚠️ Back Safety" panel reads the live profile.** It was a
+  hardcoded copy of the original default constraints, so once the stored list was
+  nulled the app kept displaying safety rules the profile no longer contained.
+- **Failed writes are no longer silent.** `saveProfile`, `saveSettings`, badge
+  awards, and the delete actions swallowed every error, so a write that never
+  reached the cluster still looked like it succeeded. They now surface a banner
+  offering **Reload**, which re-syncs from the server — the only way to see what
+  actually persisted after an optimistic update fails.
+- **The offline queue can no longer wedge.** A queued session the server rejects
+  with a 4xx is dropped instead of retried on every page load, where it would
+  block everything behind it forever.
+- The Coach Profile editor re-syncs while collapsed, so a profile changed by a
+  coach run or another device is no longer reverted by the next Save.
+- Standalone swims are excluded from the workout count and the 10/50/100 badges
+  (a session with no planned sets isn't a strength workout). Training *dates*
+  still count toward the weekly goal — swimming is training.
+- `coach/PROMPT.md`: the deload rule keyed off **low** `rpe`, which is backwards —
+  low perceived exertion means the work was easy and argues for progression. It
+  now reads high `rpe`. The session field list also described `rpe`/`note` as
+  per-exercise when they are session-level.
+- Helm chart version, `appVersion`, and `image.tag` were stranded at 0.2.0 while
+  `VERSION` had moved to 0.2.2; all now track 0.3.0.
+
 ## [0.2.2] - 2026-07-14
 
 ### Changed

@@ -120,6 +120,28 @@ type Session struct {
 	Exercises   []SessionExercise `json:"exercises"`
 	RPE         int               `json:"rpe,omitempty"`
 	Note        string            `json:"note,omitempty"`
+
+	// Conditioning logged alongside (or instead of) the strength work — e.g. the
+	// lap swim that follows most sessions. Session-level on purpose: putting
+	// distance in SessionExercise would feed it into the PR and set math, where
+	// a 1000 yd swim would read as a 1000 lb lift.
+	Activity     string  `json:"activity,omitempty"`     // e.g. "Freestyle swim"
+	Distance     float64 `json:"distance,omitempty"`
+	DistanceUnit string  `json:"distanceUnit,omitempty"` // "yd", "m", "mi", "km"
+}
+
+// Validate rejects sessions whose coach-facing fields are out of range, so a bad
+// write can't quietly skew the next coaching decision. Deliberately narrow: the
+// UI's pill picker and numeric input cannot produce a rejected payload, which
+// matters because the offline queue retries anything that isn't a 4xx.
+func (se Session) Validate() error {
+	if se.RPE < 0 || se.RPE > 10 {
+		return fmt.Errorf("rpe must be between 0 and 10, got %d", se.RPE)
+	}
+	if se.Distance < 0 {
+		return fmt.Errorf("distance cannot be negative, got %v", se.Distance)
+	}
+	return nil
 }
 
 // Settings holds user preferences and the coach handshake state. ActiveProgramID
@@ -302,6 +324,15 @@ func (s *Store) load() error {
 			return err
 		}
 	}
+	// Repair a profile whose constraints were nulled by an earlier partial PUT.
+	// These are the one field the coach prompt treats as non-negotiable, so an
+	// empty list is a safety problem, not just missing data.
+	if prof.Constraints == nil {
+		prof.Constraints = defaultProfile().Constraints
+		if err := s.writeFile("profile.json", prof); err != nil {
+			return err
+		}
+	}
 	s.profile = prof
 
 	// Sessions — start empty.
@@ -477,9 +508,25 @@ func (s *Store) Profile() Profile {
 	return s.profile.clone()
 }
 
+// SetProfile replaces the stored profile, except that a nil list is treated as
+// "not supplied" and keeps its current value. Without this a partial PUT (a
+// hand-rolled curl, or a coach run sending only goals) silently nulls the hard
+// safety constraints — which is exactly how they were lost once already. An
+// explicit empty array still clears a list, since the UI's fromForm always sends
+// an array; only an omitted key is preserved. The tradeoff: a caller can no
+// longer clear a list by leaving the key out, and must send [] instead.
 func (s *Store) SetProfile(p Profile) (Profile, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if p.Constraints == nil {
+		p.Constraints = s.profile.Constraints
+	}
+	if p.Equipment == nil {
+		p.Equipment = s.profile.Equipment
+	}
+	if p.Injuries == nil {
+		p.Injuries = s.profile.Injuries
+	}
 	s.profile = p
 	if err := s.writeFile("profile.json", s.profile); err != nil {
 		return Profile{}, err

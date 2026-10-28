@@ -126,7 +126,9 @@ async function jfetch(method, path, body) {
   if (!res.ok) {
     let msg = res.status + "";
     try { const j = await res.json(); if (j && j.error) msg += " " + j.error; } catch (e) {}
-    throw new Error(method + " " + path + " → " + msg);
+    const err = new Error(method + " " + path + " → " + msg);
+    err.status = res.status; // so callers can tell "never going to work" from "try later"
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -139,7 +141,16 @@ async function flushQueue() {
   let sent = 0;
   for (const s of q) {
     try { await jfetch("POST", "/api/sessions", s); sent++; }
-    catch (e) { remaining.push(s); }
+    catch (e) {
+      // A 4xx means the server will never accept this payload, so re-queuing it
+      // would retry forever on every page load and block everything behind it.
+      // Only network/5xx failures are worth keeping.
+      if (e && e.status >= 400 && e.status < 500) {
+        console.warn("probar: dropping unacceptable queued session", e.message, s);
+        continue;
+      }
+      remaining.push(s);
+    }
   }
   saveQueue(remaining);
   return sent;

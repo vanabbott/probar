@@ -291,4 +291,115 @@ function BottomNav({ tabs, active, onChange }) {
   );
 }
 
-Object.assign(PB, { CheckBox, Bar, Banner, Stat, GoalRing, Heatmap, SparkChart, BadgeGrid, RestTimer, ExerciseCard, PhaseSection, BottomNav });
+// FinishSheet — the post-workout wrap-up. Replaces the old confirm() dialog on
+// finishing a session, so it adds no net friction: it IS the confirmation.
+//
+// It captures the two things the coach could never see before. RPE (how hard the
+// whole session felt) is what the coaching prompt keys deload decisions off, and
+// the swim distance is a third of the weekly training load that lived nowhere.
+// Both are optional — Skip logs the session exactly as before, because a tool
+// that can lose your workout to a wrap-up prompt is worse than one that knows
+// less about it.
+function FinishSheet({ dayLabel, defaultDistance, onLog, onCancel }) {
+  const [rpe, setRpe] = useState(0);
+  const [note, setNote] = useState("");
+  const [distance, setDistance] = useState(defaultDistance ? String(defaultDistance) : "");
+  const [unit, setUnit] = useState("yd");
+
+  const save = () => {
+    const extras = {};
+    if (rpe > 0) extras.rpe = rpe;
+    if (note.trim()) extras.note = note.trim();
+    const d = parseFloat(distance);
+    if (d > 0) {
+      extras.activity = "Freestyle swim";
+      extras.distance = d;
+      extras.distanceUnit = unit;
+    }
+    onLog(extras);
+  };
+
+  const label = { fontSize: 12, fontWeight: 700, color: "var(--muted)", display: "block", marginBottom: 7 };
+  // Two rows of five: ten targets across a 375px viewport would be ~37px each,
+  // under the 44px minimum for a thumb.
+  const rows = [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]];
+
+  return (
+    // The backdrop is deliberately inert — every exit from here logs the session,
+    // and a stray tap shouldn't get to decide whether your RPE came with it.
+    <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end" }}>
+      <div style={{ width: "100%", maxWidth: 560, margin: "0 auto", background: "var(--surface)", borderTop: "1px solid var(--border)", borderRadius: "16px 16px 0 0", padding: "18px 18px 24px", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <strong style={{ fontSize: 16 }}>Nice work</strong>
+          <button onClick={onCancel} style={SMALL_BTN}>← Back</button>
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 18px" }}>
+          Logging {dayLabel}. These are optional, but they're what your coach reads next time.
+        </p>
+
+        <label style={label}>How hard did that feel? (RPE)</label>
+        <div style={{ marginBottom: 4 }}>
+          {rows.map((row, ri) => (
+            <div key={ri} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              {row.map((n) => {
+                const on = rpe === n;
+                return (
+                  <button
+                    key={n}
+                    onClick={() => setRpe(on ? 0 : n)}
+                    aria-pressed={on}
+                    aria-label={"RPE " + n + " of 10"}
+                    style={{
+                      ...PILL_BTN,
+                      flex: 1, minHeight: 44, borderRadius: 10, fontSize: 15,
+                      background: on ? "var(--accent-soft)" : "transparent",
+                      borderColor: on ? "var(--accent)" : "var(--border)",
+                      color: on ? "var(--accent)" : "var(--muted)",
+                      fontWeight: on ? 800 : 600,
+                    }}
+                  >{n}</button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <p style={{ color: "var(--muted)", fontSize: 11, margin: "0 0 18px" }}>
+          1 = barely worked · 7–8 = hard but clean · 10 = everything you had
+        </p>
+
+        <label style={label}>Anything worth noting?</label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="e.g. back felt solid, cut the last set short on time…"
+          style={{ ...INPUT, width: "100%", minHeight: 54, resize: "vertical", marginBottom: 18 }}
+        />
+
+        <label style={label}>Swim afterwards?</label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0"
+            value={distance}
+            onChange={(e) => setDistance(e.target.value)}
+            placeholder="1000"
+            aria-label="Swim distance"
+            style={{ ...INPUT, flex: 1, minHeight: 44 }}
+          />
+          <select value={unit} onChange={(e) => setUnit(e.target.value)} aria-label="Distance unit" style={{ ...INPUT, minHeight: 44 }}>
+            <option value="yd">yd</option>
+            <option value="m">m</option>
+            <option value="mi">mi</option>
+            <option value="km">km</option>
+          </select>
+        </div>
+
+        <button onClick={save} style={{ ...CTA, marginTop: 0, background: "linear-gradient(135deg, var(--success), #22a06b)", boxShadow: "none" }}>✓ Save &amp; finish</button>
+        <button onClick={() => onLog({})} style={{ ...GHOST_BTN, width: "100%", marginTop: 8 }}>Skip &amp; just log it</button>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(PB, { CheckBox, Bar, Banner, Stat, GoalRing, Heatmap, SparkChart, BadgeGrid, RestTimer, ExerciseCard, PhaseSection, BottomNav, FinishSheet });

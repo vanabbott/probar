@@ -20,7 +20,8 @@ function parseWeight(str) {
 }
 
 function TrainTab({ data, actions }) {
-  const { programs, settings, sessions } = data;
+  const { programs, settings, sessions, profile } = data;
+  const constraints = (profile && profile.constraints) || [];
   const program = useMemo(
     () => programs.find((p) => p.id === settings.activeProgramId) || programs[0],
     [programs, settings.activeProgramId]
@@ -37,12 +38,26 @@ function TrainTab({ data, actions }) {
     return out;
   }, [sessions]);
 
+  // Most recent logged swim distance, to prefill the wrap-up. The swim is a fixed
+  // habit, so remembering it turns logging into confirming.
+  const lastDistance = useMemo(() => {
+    let d = 0;
+    sessions.slice().sort((a, b) => (a.date < b.date ? -1 : 1)).forEach((s) => {
+      if (typeof s.distance === "number" && s.distance > 0) d = s.distance;
+    });
+    return d;
+  }, [sessions]);
+
   const firstDay = program && program.days[0] ? program.days[0].id : "";
   const [dayId, setDayId] = useState(firstDay);
   const [phase, setPhase] = useState("warmup");
   const [progress, setProgress] = useState({});
   const [weights, setWeights] = useState({});
   const [restDur, setRestDur] = useState(settings.restDefaultSec || 60);
+  // The drafted session awaiting the wrap-up sheet. Intentionally NOT persisted to
+  // localStorage with the rest of the in-progress state — a reload should drop you
+  // back into the workout, not into a half-finished dialog.
+  const [wrap, setWrap] = useState(null);
   const timer = useWallClockTimer();
 
   // Hydrate in-progress state for today's active program (once program is known).
@@ -122,10 +137,11 @@ function TrainTab({ data, actions }) {
   const phasePct = phase === "warmup" ? warmupPct : phase === "workout" ? workoutPct : cooldownPct;
   const phaseColor = phase === "warmup" ? "var(--warn)" : phase === "workout" ? day.color : "var(--accent-2)";
 
+  // Finishing is a two-step now: build the session, then hand it to FinishSheet,
+  // which doubles as the confirmation the old confirm() provided.
   const finish = () => {
     if (doneSets === 0) { window.alert("Log at least one set before finishing."); return; }
-    if (!window.confirm("Finish and log this " + day.label + " session?")) return;
-    const session = {
+    setWrap({
       date: todayStr(),
       programId: program.id,
       dayId: day.id,
@@ -134,8 +150,13 @@ function TrainTab({ data, actions }) {
         const w = parseWeight(weights[ex.name] || "");
         return { name: ex.name, setsPlanned: ex.sets, setsCompleted: cnt(i), weight: w.weight, unit: w.unit, reps: ex.reps };
       }),
-    };
-    actions.logSession(session);
+    });
+  };
+
+  // extras carries whatever the sheet collected (rpe/note/swim), or {} on Skip.
+  const logAndClose = (extras) => {
+    actions.logSession(Object.assign({}, wrap, extras));
+    setWrap(null);
     setProgress((all) => ({ ...all, [day.id]: blankDayProg() }));
     timer.stop();
     actions.goTo("history");
@@ -238,16 +259,32 @@ function TrainTab({ data, actions }) {
           </>
         )}
 
+        {/* Reads the live profile rather than a hardcoded copy. The previous
+            version duplicated the original defaults inline, so once the stored
+            constraints were nulled the app kept displaying safety rules the
+            coach-facing profile no longer contained. */}
         <div style={{ background: "var(--danger-soft)", border: "1px solid var(--danger-border)", borderRadius: 12, padding: "12px 14px", marginTop: 24 }}>
           <div style={{ color: "var(--danger)", fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Back Safety</div>
-          <ul style={{ color: "var(--muted)", fontSize: 12, margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
-            <li>Sharp or radiating pain → stop immediately</li>
-            <li>No barbell back squats or conventional deadlifts yet</li>
-            <li>Lower back stays flat (not arched) during core work</li>
-            <li>Start lighter than you think you need to</li>
-          </ul>
+          {constraints.length ? (
+            <ul style={{ color: "var(--muted)", fontSize: 12, margin: 0, paddingLeft: 16, lineHeight: 1.8 }}>
+              {constraints.map((c, i) => <li key={i}>{c}</li>)}
+            </ul>
+          ) : (
+            <div style={{ color: "var(--muted)", fontSize: 12, lineHeight: 1.6 }}>
+              No hard constraints set. Add them in Programs → Coach Profile and your coach has to honor them.
+            </div>
+          )}
         </div>
       </div>
+
+      {wrap && (
+        <FinishSheet
+          dayLabel={day.label}
+          defaultDistance={lastDistance}
+          onLog={logAndClose}
+          onCancel={() => setWrap(null)}
+        />
+      )}
     </div>
   );
 }

@@ -8,7 +8,9 @@ image:
   repository: harbor.k8s.home/probar/web-app
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: "0.2.0"
+  # CI publishes "<VERSION>-<shortsha>", so override at deploy time:
+  #   helm upgrade ... --set image.tag=0.3.0-<shortsha>
+  tag: "0.3.0"
 
 imagePullSecrets: []
 nameOverride: ""

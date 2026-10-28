@@ -14,8 +14,12 @@ Fetch and read all of these before deciding anything (see `update-workout.sh con
   matches `settings.activeProgramId`).
 - `GET /api/settings` — `weeklyGoal`, `activeProgramId`, and any `coachMessage`
   the user left you.
-- `GET /api/sessions` — every logged workout: `setsCompleted` vs `setsPlanned`,
-  `weight`/`unit`/`reps` per exercise, optional `rpe` (1–10), `note`, and `date`.
+- `GET /api/sessions` — every logged workout.
+  - **Per exercise:** `setsCompleted` vs `setsPlanned`, and `weight`/`unit`/`reps`.
+  - **Per session:** `date`, optional `rpe` (1–10, how hard the whole session
+    felt), optional `note`, and optional `activity`/`distance`/`distanceUnit` for
+    conditioning logged with that session (e.g. a 1000 yd freestyle swim). A
+    session with no planned sets is conditioning only, not a strength workout.
 
 ## 2. Decide the next block
 
@@ -24,8 +28,12 @@ Fetch and read all of these before deciding anything (see `update-workout.sh con
   load or volume. If a lift has stalled at the same weight for 3+ sessions, swap
   it or change the rep scheme.
 - **Adherence-aware volume** — full weeks that meet `weeklyGoal` → progress. Missed
-  weeks or low `rpe` → program a lighter re-entry or a **deload** rather than
-  piling on volume.
+  weeks or **high** `rpe` (consistently 8+) → program a lighter re-entry or a
+  **deload** rather than piling on volume. RPE is perceived *exertion*: low means
+  the work was easy and argues for progression, high means it was near the limit.
+- **Account for conditioning** — `distance` is real training load. Don't read a
+  dropped exercise as weakness if the session carried a long swim, and don't add
+  volume on top of rising conditioning volume.
 - **Balance & safety** — ALWAYS honor every entry in `profile.constraints` (they
   are non-negotiable). Keep the profile's required movements in every session. Only use equipment listed in `profile.equipment`.
   Respect `settings.coachMessage`.

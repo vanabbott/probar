@@ -6,6 +6,15 @@
 // Helpers (ymd, parseYMD, addDays, startOfWeek, weekKey, todayStr) come from
 // 10_lib.jsx via the shared script scope — see 10_lib.jsx's header note.
 
+// A session with no planned sets is conditioning only (a standalone swim), not a
+// strength workout. The distinction matters for the "N Workouts" badges and the
+// Workouts tile: counting swims there would fire the 10/50/100 badges at half the
+// real work. Training DATES still count toward the weekly goal either way —
+// swimming is training.
+function isStrengthSession(s) {
+  return (s.exercises || []).some((e) => (e.setsPlanned || 0) > 0);
+}
+
 // computeStats reduces the session log to the numbers the gamification UI needs.
 // A "week" counts unique training DATES (two sessions in a day still count once)
 // against the weekly goal. The current streak lets the in-progress week not yet
@@ -46,7 +55,32 @@ function computeStats(sessions, settings) {
     }
   }
 
-  return { totalSessions: sessions.length, thisWeek, goal, weekStartsOn, currentStreak, longestStreak, weekCounts };
+  // Conditioning totals, surfaced separately so lifting counts stay honest.
+  // totalDistance assumes one unit throughout and is labelled with the first one
+  // seen; mixing yd and m would sum them naively. Fine for a lap-pool habit, but
+  // it would need per-unit buckets to be correct in general.
+  let swimSessions = 0;
+  let totalDistance = 0;
+  let distanceUnit = "";
+  let lastDistance = 0;
+  let lastDistanceDate = "";
+  sessions.forEach((s) => {
+    if (typeof s.distance === "number" && s.distance > 0) {
+      swimSessions++;
+      totalDistance += s.distance;
+      if (!distanceUnit) distanceUnit = s.distanceUnit || "yd";
+      if (!lastDistanceDate || (s.date || "") >= lastDistanceDate) {
+        lastDistanceDate = s.date || "";
+        lastDistance = s.distance;
+      }
+    }
+  });
+
+  return {
+    totalSessions: sessions.filter(isStrengthSession).length,
+    thisWeek, goal, weekStartsOn, currentStreak, longestStreak, weekCounts,
+    swimSessions, totalDistance, distanceUnit, lastDistance,
+  };
 }
 
 // computePRs: heaviest logged weight per exercise name.
@@ -89,4 +123,4 @@ function evaluateBadges(stats, sessions, prs) {
   return BADGES.map((b) => ({ id: b.id, icon: b.icon, label: b.label, desc: b.desc, earned: !!b.test(stats, sessions, prs) }));
 }
 
-Object.assign(PB, { computeStats, computePRs, weightHistory, BADGES, evaluateBadges });
+Object.assign(PB, { computeStats, computePRs, weightHistory, isStrengthSession, BADGES, evaluateBadges });

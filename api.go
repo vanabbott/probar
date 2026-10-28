@@ -123,6 +123,10 @@ func (a *api) createSession(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &se) {
 		return
 	}
+	if err := se.Validate(); err != nil {
+		httpError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	saved, err := a.store.CreateSession(se)
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, err.Error())

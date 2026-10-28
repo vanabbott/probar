@@ -17,14 +17,24 @@ const TABS = [
 function GymApp() {
   const [data, setData] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [writeError, setWriteError] = useState(null);
   const [tab, setTab] = useState("train");
   const [builder, setBuilder] = useState(null);
 
   const load = () => {
     setLoadError(null);
+    setWriteError(null);
     api.loadAll().then(setData).catch((e) => setLoadError(String((e && e.message) || e)));
   };
   useEffect(() => { load(); }, []);
+
+  // Every mutation below applies locally first, so a failed PUT/DELETE leaves the
+  // screen showing something the server never stored. Surface that instead of
+  // swallowing it; the fix offered is Reload (re-run load()), not a retry, because
+  // re-syncing from the server is the only way to know what actually persisted.
+  const onWriteFail = (what) => (e) => {
+    setWriteError(what + " didn't save: " + String((e && e.message) || e));
+  };
 
   // Auto-award newly earned badges. Runs whenever the log changes; it only
   // writes when a badge is newly earned, so it settles after one pass.
@@ -40,13 +50,13 @@ function GymApp() {
     if (changed) {
       const settings = Object.assign({}, data.settings, { earnedBadges: earned });
       setData((d) => Object.assign({}, d, { settings }));
-      api.putSettings(settings).catch(() => {});
+      api.putSettings(settings).catch(onWriteFail("Badge"));
     }
   }, [data && data.sessions, data && data.settings]);
 
   const patchSettings = (settings) => {
     setData((d) => Object.assign({}, d, { settings }));
-    return api.putSettings(settings).catch(() => {});
+    return api.putSettings(settings).catch(onWriteFail("Settings"));
   };
 
   const actions = {
@@ -60,7 +70,7 @@ function GymApp() {
     },
     deleteSession: (id) => {
       setData((d) => Object.assign({}, d, { sessions: d.sessions.filter((s) => s.id !== id) }));
-      api.deleteSession(id).catch(() => {});
+      api.deleteSession(id).catch(onWriteFail("Deleting that session"));
     },
 
     setActiveProgram: (id) => patchSettings(Object.assign({}, data.settings, {
@@ -78,7 +88,7 @@ function GymApp() {
 
     saveProfile: (profile) => {
       setData((d) => Object.assign({}, d, { profile }));
-      return api.putProfile(profile).catch(() => {});
+      return api.putProfile(profile).catch(onWriteFail("Profile"));
     },
     saveProgram: (program) => api.saveProgram(program).then((saved) => {
       setData((d) => {
@@ -91,7 +101,7 @@ function GymApp() {
     }),
     deleteProgram: (id) => {
       setData((d) => Object.assign({}, d, { programs: d.programs.filter((p) => p.id !== id) }));
-      api.deleteProgram(id).catch(() => {});
+      api.deleteProgram(id).catch(onWriteFail("Deleting that program"));
     },
   };
 
@@ -116,6 +126,19 @@ function GymApp() {
       {data.offline && (
         <div style={{ background: "var(--warn-border)", color: "#0b0d12", fontSize: 12, fontWeight: 600, textAlign: "center", padding: "6px 12px" }}>
           Offline — showing your last synced data. Changes sync when you're back.
+        </div>
+      )}
+      {writeError && (
+        <div style={{ padding: "12px 18px 0" }}>
+          <Banner tone="danger" title={writeError}>
+            <div style={{ marginBottom: 10 }}>
+              This screen may be showing a change the server didn't store. Reload to see what actually saved.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={load} style={PB.GHOST_BTN}>Reload</button>
+              <button onClick={() => setWriteError(null)} style={PB.GHOST_BTN}>Dismiss</button>
+            </div>
+          </Banner>
         </div>
       )}
       {tab === "train" && <TrainTab data={data} actions={actions} />}
