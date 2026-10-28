@@ -27,8 +27,7 @@ Fetch and read all of these before deciding anything (see `update-workout.sh con
   weeks or low `rpe` → program a lighter re-entry or a **deload** rather than
   piling on volume.
 - **Balance & safety** — ALWAYS honor every entry in `profile.constraints` (they
-  are non-negotiable). Keep the profile's required movements in every session
-  (e.g. Face Pull, Bird-Dog). Only use equipment listed in `profile.equipment`.
+  are non-negotiable). Keep the profile's required movements in every session. Only use equipment listed in `profile.equipment`.
   Respect `settings.coachMessage`.
 - **Motivate** — call out PRs and streaks in the coach note.
 
